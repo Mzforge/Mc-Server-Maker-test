@@ -24,6 +24,28 @@ Every change you commit to GitHub goes live automatically.
 | _headers | security settings for the website |
 | package.json, package-lock.json | tells Cloudflare which tools to use |
 
+## Features
+
+- **30-day addresses.** Each server's address is held 30 days at a time.
+  Running the server or clicking *Renew server (30 days)* restarts the
+  count. A daily job (03:17 UTC, set in wrangler.toml) removes servers
+  that ran out and frees their names. The page warns in the last 7 days.
+- **Renew-Server.url** in every download opens the server's manage page.
+  The launcher checks in on start: if the server expired it opens that
+  page instead of starting; if it was removed it says so.
+- **Mods & plugins** tab: searches Modrinth, filtered to the server's
+  loader (Fabric mods / Paper plugins) and Minecraft version, and adds
+  required dependencies automatically. Chosen files are included in
+  downloads (checked against Modrinth's SHA-512), and the launcher
+  downloads newly added ones on start. It never deletes files.
+- **Settings** tab: name, MOTD (with &-colour codes and a live preview),
+  max players, game mode, difficulty, PvP. Written to server.properties in
+  downloads and re-applied by the launcher on every start; other lines in
+  server.properties are left alone.
+
+The database upgrades itself: servers created before this version get the
+new settings with defaults and a fresh 30 days.
+
 ## Later (optional)
 
 - **Use mzforge.com:** Worker → Settings → Domains & Routes → Add →

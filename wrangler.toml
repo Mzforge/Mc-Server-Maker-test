@@ -22,3 +22,7 @@ MAX_CREATIONS_PER_DAY = "5"
 
 [observability]
 enabled = true
+
+# Daily cleanup of servers whose 30 days ran out (03:17 UTC).
+[triggers]
+crons = ["17 3 * * *"]

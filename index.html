@@ -140,7 +140,7 @@ main:focus { outline: none; }
 .field { margin-bottom: 18px; }
 .field label, .label { display: block; font: 600 .95rem var(--display); margin-bottom: 6px; }
 .hint { color: var(--muted); font-size: .88rem; margin-top: 6px; }
-input[type=text], input[type=email], input[type=password], select {
+input[type=text], input[type=email], input[type=password], input[type=search], select {
   width: 100%; min-height: 46px; padding: 10px 12px; border-radius: var(--r);
   background: var(--bg); color: var(--text); border: 1px solid var(--line); font: 1rem var(--body);
 }
@@ -215,6 +215,32 @@ details.panel summary { cursor: pointer; }
 .keybox h2 { font-size: 1.3rem; }
 .keybox input { font-family: var(--display); font-size: .92rem; }
 .linkish { background: none; border: 0; padding: 0; color: var(--glow); font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.row-status { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.expiry { font: 600 .85rem var(--display); color: var(--muted); }
+.expiry.warn { color: var(--glow); }
+.expiry.expired { color: var(--danger); }
+.alert.warn { background: rgba(244,201,93,.12); box-shadow: inset 3px 0 0 var(--glow); }
+.row-note.alert { margin: 6px 0 0; display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.renew-bar { display: flex; gap: 16px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin: 18px 0 0; padding: 14px 16px; border-radius: 8px; background: var(--surface); border: 1px solid var(--line); }
+.renew-bar p { margin: 0; }
+.renew-bar.warn { border-color: var(--glow); box-shadow: inset 4px 0 0 var(--glow); }
+.renew-bar.expired { border-color: var(--danger); box-shadow: inset 4px 0 0 var(--danger); }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 28px 0 28px; overflow-x: auto; }
+.tabs a { padding: 10px 14px; color: var(--muted); text-decoration: none; font: 600 1rem var(--display); border-bottom: 3px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+.tabs a:hover { color: var(--text); }
+.tabs a[aria-current="page"] { color: var(--text); border-bottom-color: var(--glow); }
+.settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; }
+.motd-preview { margin-top: 10px; background: #1b1b1b; border-radius: 4px; padding: 10px 12px; font: 16px/1.35 "Minecraft", "Consolas", monospace; color: #aaa; white-space: pre-wrap; overflow-wrap: anywhere; box-shadow: inset 2px 2px 0 rgba(0,0,0,.6); }
+.motd-preview .t { color: #fff; display: block; margin-bottom: 2px; }
+.toggle-row { display: flex; gap: 24px; flex-wrap: wrap; }
+.mod-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.mod { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 12px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.mod img, .mod .noicon { width: 44px; height: 44px; border-radius: 6px; background: var(--raised); object-fit: cover; }
+.mod b { font-family: var(--display); display: block; overflow-wrap: anywhere; }
+.mod .meta { color: var(--muted); font-size: .88rem; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.search-row { display: flex; gap: 10px; margin: 8px 0 16px; }
+.search-row input { flex: 1; }
+@media (max-width: 600px) { .settings-grid { grid-template-columns: 1fr; } .row-status { align-items: flex-start; } }
 .danger-zone { border: 1px solid rgba(238,106,95,.5); border-radius: 10px; padding: 22px; }
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
 .inline-form { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -410,8 +436,14 @@ function makeZip(entries) {
   return new Blob([...parts, ...central, end], { type: "application/zip" });
 }
 let launcherBytes = null;
-async function saveDownload(dl) {
+async function sha512Hex(bytes) {
+  const d = await crypto.subtle.digest("SHA-512", bytes);
+  return [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, "0")).join("");
+}
+// progress(text) is called as files are fetched, for button labels.
+async function saveDownload(dl, progress = () => {}) {
   if (!launcherBytes) {
+    progress("Getting launcher…");
     let res;
     try { res = await fetch("MZForgeLauncher.exe"); } catch { res = null; }
     if (!res || !res.ok) throw new Error("Couldn't load MZForgeLauncher.exe. Check it's in the same folder as index.html on the site.");
@@ -420,6 +452,20 @@ async function saveDownload(dl) {
   const enc = new TextEncoder();
   const entries = Object.entries(dl.files).map(([name, text]) => ({ name, data: enc.encode(text) }));
   entries.push({ name: "MZForgeLauncher.exe", data: launcherBytes });
+  // Mods/plugins: fetched via the API (Modrinth's CDN only) and checked
+  // against Modrinth's SHA-512 before going in the ZIP.
+  const failed = [];
+  for (const [i, m] of (dl.mods || []).entries()) {
+    progress(`Adding ${dl.mods_folder} ${i + 1} of ${dl.mods.length}…`);
+    try {
+      const res = await fetch(API + "/modfile?url=" + encodeURIComponent(m.url));
+      if (!res.ok) throw new Error();
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      if (m.sha512 && (await sha512Hex(bytes)) !== m.sha512) throw new Error();
+      entries.push({ name: `${dl.mods_folder}/${m.filename}`, data: bytes });
+    } catch { failed.push(m.title); }
+  }
+  if (failed.length) toast(`Couldn't include ${failed.join(", ")}. The launcher will download ${failed.length === 1 ? "it" : "them"} when it starts.`);
   const url = URL.createObjectURL(makeZip(entries));
   const a = document.createElement("a");
   a.href = url; a.download = dl.filename;
@@ -445,6 +491,21 @@ function statusInfo(sv) {
   return { badge: `<span class="status ${esc(sv.status)}"><span class="dot" aria-hidden="true"></span>${label}</span>`, detail };
 }
 
+// Expiry: the address is held 30 days at a time; running the server or
+// clicking Renew restarts the count.
+function expiryInfo(sv) {
+  if (!sv.expires_at) return null;
+  const d = sv.days_left, date = dateStr(sv.expires_at);
+  if (sv.expired) return { level: "expired", short: "Expired", text: `This server's 30 days ran out. It will be removed and its address freed within a day unless you renew it now.` };
+  const days = `${d} day${d === 1 ? "" : "s"}`;
+  if (d < 7) return { level: "warn", short: `Expires in ${days}`, text: `Expires in ${days} (${date}). Click Renew to extend, or just run the server: that renews it too.` };
+  return { level: "ok", short: `${d} days left`, text: `Address held until ${date}. Running the server renews it automatically.` };
+}
+function expiryBadge(sv) {
+  const e = expiryInfo(sv);
+  return e ? `<span class="expiry ${e.level}">${esc(e.short)}</span>` : "";
+}
+
 function plateHTML(sv, { big = false, caption = "Your friends join at", demo = false } = {}) {
   return `
   <section class="plate ${big ? "big" : ""}" aria-label="Join address">
@@ -462,10 +523,17 @@ function plateHTML(sv, { big = false, caption = "Your friends join at", demo = f
 document.addEventListener("click", async e => {
   const c = e.target.closest("[data-copy]");
   if (c) return copyText(c.dataset.copy, c.dataset.copyLabel);
+  const rn = e.target.closest("[data-renew]");
+  if (rn) {
+    rn.disabled = true; rn.textContent = "Renewing…";
+    try { const sv = await api("POST", `/servers/${rn.dataset.renew}/renew`, undefined, keyFor(rn.dataset.renew)); toast(`Renewed until ${dateStr(sv.expires_at)}`); router(); }
+    catch (err) { toast(err.message); rn.disabled = false; rn.textContent = "Renew server (30 days)"; }
+    return;
+  }
   const d = e.target.closest("[data-dl]");
   if (d) {
     d.disabled = true; const label = d.textContent; d.textContent = "Preparing…";
-    try { const r = await api("POST", `/servers/${d.dataset.dl}/files`, undefined, keyFor(d.dataset.dl)); await saveDownload(r.download); toast("Download started"); }
+    try { const r = await api("POST", `/servers/${d.dataset.dl}/files`, undefined, keyFor(d.dataset.dl)); await saveDownload(r.download, t => d.textContent = t); toast("Download started"); }
     catch (err) { toast(err.message); }
     d.disabled = false; d.textContent = label;
   }
@@ -485,7 +553,7 @@ const routes = [
   [/^$/, viewLanding],
   [/^servers$/, viewMyServers],
   [/^new$/, viewCreate],
-  [/^servers\/([a-f0-9]+)(\/setup)?$/, viewServer],
+  [/^servers\/([a-f0-9]+)(\/setup|\/settings|\/mods)?$/, viewServer],
   [/^manage\/([a-f0-9]+)\/([a-f0-9]+)$/, openManageLink],
   [/^s\/([a-f0-9]+)$/, viewShare],
   [/^help(?:\/([a-z-]+))?$/, viewHelp],
@@ -633,7 +701,7 @@ async function viewMyServers() {
             <h2><a href="#/servers/${esc(sv.server_id)}">${esc(sv.name)}</a></h2>
             <div class="meta">${esc(loaderName(sv.loader))} ${esc(sv.mc_version)}, created ${esc(dateStr(sv.created_at))}</div>
           </div>
-          <div>${st.badge}</div>
+          <div class="row-status">${st.badge}${expiryBadge(sv)}</div>
           <div class="row-addr">
             <code>${addrHTML(sv.hostname)}</code>
             <div class="row-actions">
@@ -643,6 +711,7 @@ async function viewMyServers() {
             </div>
           </div>
           ${sv.status !== "online" ? `<div class="meta row-note">${esc(st.detail)}</div>` : ""}
+          ${(() => { const e = expiryInfo(sv); return e && e.level !== "ok" ? `<div class="row-note alert ${e.level === "expired" ? "error" : "warn"}">${esc(e.text)} <button class="btn small ${e.level === "expired" ? "danger" : "primary"}" data-renew="${esc(sv.server_id)}">Renew server (30 days)</button></div>` : ""; })()}
         </article>`;
       }).join("")}</div>
       ${addForm}
@@ -790,7 +859,7 @@ async function viewCreate() {
       const r = await api("POST", "/allocate", { slug: w.slug, name, loader: w.loader, mc_version: w.version, eula_accepted: w.accepted });
       remember(r.server_id, r.manage_key, name);
       btn.textContent = "Preparing download…";
-      try { await saveDownload(r.download); } catch (e) { toast(e.message); }
+      try { await saveDownload(r.download, t => btn.textContent = t); } catch (e) { toast(e.message); }
       location.hash = `#/servers/${r.server_id}/setup`;
     } catch (err) {
       if (err.status === 409) { w.step = 0; w.slugOK = false; draw(); }
@@ -802,12 +871,15 @@ async function viewCreate() {
 }
 
 // ---------- server page (managing) ----------
-async function viewServer(id, setup) {
+// Tabs: #/servers/{id} (overview), /settings, /mods. "/setup" = overview
+// right after creation.
+async function viewServer(id, tab) {
+  tab = (tab || "").replace("/", "");
   const key = keyFor(id);
   if (!key) {
     setTitle("Manage link needed");
     $app.innerHTML = `<div class="wrap narrow"><h1>Manage link needed</h1>
-      <p>This browser doesn't have this server's manage link. Open the link from the README.txt in the server's download, or paste it on <a href="#/servers">My servers</a>.</p>
+      <p>This browser doesn't have this server's manage link. Open Renew-Server.url or the link in README.txt from the server's folder, or paste the link on <a href="#/servers">My servers</a>.</p>
       <a class="btn" href="#/s/${esc(id)}">View its status page</a></div>`;
     return;
   }
@@ -816,35 +888,61 @@ async function viewServer(id, setup) {
   try { sv = await api("GET", `/servers/${id}`, undefined, key); }
   catch (e) {
     setTitle("Server not found");
-    $app.innerHTML = `<div class="wrap narrow"><h1>Server not found</h1><p>${e.status === 404 ? "It was deleted, or the saved manage link no longer works." : esc(e.message)}</p>
-      <div class="cta-row">${e.status === 404 ? `<button class="btn" id="forget">Remove from my servers</button>` : ""}<a class="btn ghost" href="#/servers">My servers</a></div></div>`;
+    $app.innerHTML = `<div class="wrap narrow"><h1>Server not found</h1><p>${e.status === 404 ? "It was deleted, or it expired and was removed. Its address is free again, so you can create a new server with the same name." : esc(e.message)}</p>
+      <div class="cta-row">${e.status === 404 ? `<button class="btn" id="forget">Remove from my servers</button>` : ""}<a class="btn ghost" href="#/new">Create a server</a></div></div>`;
     const f = $("forget"); if (f) f.onclick = () => { forget(id); location.hash = "#/servers"; };
     return;
   }
   setTitle(sv.name);
-  const showSetup = !!setup || sv.status === "never_started";
-  let jar = null;
-  if (showSetup) { try { jar = await api("GET", `/meta/server-jar?loader=${sv.loader}&version=${encodeURIComponent(sv.mc_version)}`); } catch {} }
+  const setup = tab === "setup";
+  const base = `#/servers/${id}`;
+  const cur = t => (tab === t || (t === "" && setup)) ? ' aria-current="page"' : "";
+  const exp = expiryInfo(sv);
+  const renewBar = exp ? `
+    <div class="renew-bar ${exp.level}" id="renewbar">
+      <p>${esc(exp.text)}</p>
+      <button class="btn ${exp.level === "expired" ? "danger" : exp.level === "warn" ? "primary" : ""}" data-renew="${esc(id)}">Renew server (30 days)</button>
+    </div>` : "";
 
-  const mURL = manageURL(id, key);
-  const detailText = s => statusInfo(s).detail + (s.status === "online" && s.live_version ? ` Running ${s.live_version}.` : "");
-  const keyPanel = `
-    <section class="keybox ${setup ? "fresh" : ""}">
-      <h2>${setup ? "Save your manage link" : "Manage link"}</h2>
-      <p>There's no account. This link is how you get back to this page to rename, re-download, or delete the server, from any device. Anyone who has it can delete the server, so share the join address with friends, never this.</p>
-      <div class="inline-form"><label class="sr-only" for="mlink">Manage link</label>
-        <input id="mlink" type="text" readonly value="${esc(mURL)}"><button class="btn ${setup ? "primary" : ""}" data-copy="${esc(mURL)}" data-copy-label="Manage link copied">Copy link</button></div>
-      <p class="hint">Also saved in this browser, and written in README.txt inside the download.</p>
-    </section>`;
+  let body;
+  if (tab === "settings") body = settingsTabHTML(sv);
+  else if (tab === "mods") body = modsTabHTML(sv);
+  else body = await overviewTabHTML(sv, key, setup);
 
   $app.innerHTML = `
   <div class="wrap">
     <p class="small"><a href="#/servers">My servers</a></p>
     <div class="server-top"><h1 id="sname">${esc(sv.name)}</h1></div>
     ${setup ? `<div class="alert ok" role="status">Server created. Your download should have started. If it didn't, use Download again below.</div>` : ""}
+    ${renewBar}
+    <nav class="tabs" aria-label="Server sections">
+      <a href="${base}"${cur("")}>Overview</a>
+      <a href="${base}/settings"${cur("settings")}>Settings</a>
+      <a href="${base}/mods"${cur("mods")}>${sv.loader === "fabric" ? "Mods" : sv.loader === "paper" ? "Plugins" : "Mods &amp; Plugins"}${sv.mods?.length ? ` (${sv.mods.length})` : ""}</a>
+    </nav>
+    ${body}
+  </div>`;
+
+  if (tab === "settings") wireSettings(sv, key);
+  else if (tab === "mods") wireMods(sv, key);
+  else wireOverview(sv, key);
+}
+
+async function overviewTabHTML(sv, key, setup) {
+  const showSetup = setup || sv.status === "never_started";
+  let jar = null;
+  if (showSetup) { try { jar = await api("GET", `/meta/server-jar?loader=${sv.loader}&version=${encodeURIComponent(sv.mc_version)}`); } catch {} }
+  const mURL = manageURL(sv.server_id, key);
+  const keyPanel = `
+    <section class="keybox ${setup ? "fresh" : ""}">
+      <h2>${setup ? "Save your manage link" : "Manage link"}</h2>
+      <p>There's no account. This link is how you get back to this page to renew, change settings, or delete the server, from any device. It's also in the download as Renew-Server.url. Anyone who has it can delete the server, so share the join address with friends, never this.</p>
+      <div class="inline-form"><label class="sr-only" for="mlink">Manage link</label>
+        <input id="mlink" type="text" readonly value="${esc(mURL)}"><button class="btn ${setup ? "primary" : ""}" data-copy="${esc(mURL)}" data-copy-label="Manage link copied">Copy link</button></div>
+    </section>`;
+  return `
     <div id="plate">${plateHTML(sv, { big: true })}</div>
     <p class="status-line muted" id="sdetail">${esc(detailText(sv))}</p>
-
     <ul class="facts">
       <li>Software <b>${esc(loaderName(sv.loader))} ${esc(sv.mc_version)}</b></li>
       <li>Created <b>${esc(dateStr(sv.created_at))}</b></li>
@@ -855,43 +953,16 @@ async function viewServer(id, setup) {
       <button class="btn ghost" data-copy="${esc(shareURL(sv.server_id))}" data-copy-label="Status page link copied">Copy status page link</button>
     </div>
     <p class="small muted" style="margin-top:10px">The status page is safe to share: friends can see whether the server is up, but can't change anything.</p>
-
     ${setup ? keyPanel : ""}
     ${showSetup ? setupHTML(sv, jar) : ""}
-
-    <div class="panel two">
-      <section>
-        <h2>Rename</h2>
-        <form class="inline-form" id="rename"><label class="sr-only" for="newname">Server name</label>
-          <input id="newname" type="text" maxlength="48" value="${esc(sv.name)}"><button class="btn">Save name</button></form>
-        <p class="hint">Only changes the name shown on MZForge. The join address stays the same.</p>
-      </section>
-      <section class="danger-zone">
-        <h2>Delete server</h2>
-        <p class="muted small">The launcher from this download stops working, and the address <b>mzf-${esc(sv.slug)}</b> is retired for good: nobody can use it again, including you. World files on your PC aren't touched.</p>
-        <form id="del"><label class="label" for="confirm">Type ${esc(sv.slug)} to confirm</label>
-          <div class="inline-form"><input id="confirm" type="text" autocomplete="off" spellcheck="false" autocapitalize="off"><button class="btn danger" id="delbtn" disabled>Delete server</button></div></form>
-      </section>
-    </div>
     ${setup ? "" : `<div class="panel">${keyPanel}</div>`}
     ${!showSetup ? `<details class="panel" id="moresetup"><summary class="label">Setup steps</summary><div id="setupbody"></div></details>` : ""}
-    <p class="panel small"><button class="linkish" id="forgetme">Remove from this browser</button> <span class="muted">(doesn't delete the server)</span></p>
-  </div>`;
+    <p class="panel small"><button class="linkish" id="forgetme">Remove from this browser</button> <span class="muted">(doesn't delete the server)</span></p>`;
+}
+function detailText(s) { return statusInfo(s).detail + (s.status === "online" && s.live_version ? ` Running ${s.live_version}.` : ""); }
 
-  $("rename").onsubmit = async e => {
-    e.preventDefault();
-    try { const r = await api("PATCH", `/servers/${id}`, { name: $("newname").value }, key); $("sname").textContent = r.name; setTitle(r.name); remember(id, key, r.name); toast("Name saved"); }
-    catch (err) { toast(err.message); }
-  };
-  const confirmI = $("confirm"), delbtn = $("delbtn");
-  confirmI.oninput = () => delbtn.disabled = confirmI.value.trim() !== sv.slug;
-  $("del").onsubmit = async e => {
-    e.preventDefault();
-    if (confirmI.value.trim() !== sv.slug) return;
-    busy(delbtn, true, "Deleting…");
-    try { await api("DELETE", `/servers/${id}`, undefined, key); forget(id); toast("Server deleted"); location.hash = "#/servers"; }
-    catch (err) { toast(err.message); busy(delbtn, false, "Delete server"); }
-  };
+function wireOverview(sv, key) {
+  const id = sv.server_id;
   $("forgetme").onclick = () => {
     if (confirm("Remove this server from this browser? You'll need its manage link to get back here. The server itself keeps working.")) { forget(id); location.hash = "#/servers"; }
   };
@@ -903,15 +974,207 @@ async function viewServer(id, setup) {
     try { j = await api("GET", `/meta/server-jar?loader=${sv.loader}&version=${encodeURIComponent(sv.mc_version)}`); } catch {}
     $("setupbody").innerHTML = setupHTML(sv, j, false);
   });
-
   every(15000, async () => {
     try {
       const n = await api("GET", `/servers/${id}`, undefined, key);
-      if (!location.hash.startsWith(`#/servers/${id}`)) return;
+      if (!$("plate") || !location.hash.startsWith(`#/servers/${id}`)) return;
       if (!$("plate").contains(document.activeElement)) $("plate").innerHTML = plateHTML(n, { big: true });
       $("sdetail").textContent = detailText(n);
     } catch {}
   });
+}
+
+// ----- Settings tab -----
+// Minecraft colour codes, for the MOTD preview.
+const MC_COLORS = { 0: "#000", 1: "#00a", 2: "#0a0", 3: "#0aa", 4: "#a00", 5: "#a0a", 6: "#fa0", 7: "#aaa", 8: "#555", 9: "#55f", a: "#5f5", b: "#5ff", c: "#f55", d: "#f5f", e: "#ff5", f: "#fff" };
+function motdPreviewHTML(text) {
+  let out = "", style = { color: "#aaa" };
+  const parts = String(text).split(/[&§]([0-9a-fk-or])/i);
+  for (let i = 0; i < parts.length; i++) {
+    if (i % 2 === 1) {
+      const c = parts[i].toLowerCase();
+      if (MC_COLORS[c]) style = { color: MC_COLORS[c] };
+      else if (c === "l") style.bold = true;
+      else if (c === "o") style.italic = true;
+      else if (c === "n") style.underline = true;
+      else if (c === "m") style.strike = true;
+      else if (c === "r") style = { color: "#aaa" };
+      continue;
+    }
+    if (!parts[i]) continue;
+    const css = `color:${style.color};${style.bold ? "font-weight:700;" : ""}${style.italic ? "font-style:italic;" : ""}` +
+      `${style.underline || style.strike ? `text-decoration:${style.underline ? "underline " : ""}${style.strike ? "line-through" : ""};` : ""}`;
+    out += `<span style="${css}">${esc(parts[i])}</span>`;
+  }
+  return out;
+}
+function settingsTabHTML(sv) {
+  const opt = (v, cur, label) => `<option value="${v}" ${v === cur ? "selected" : ""}>${label}</option>`;
+  return `
+    <form class="card" id="settings" novalidate>
+      <div id="err"></div>
+      <div class="field"><label for="s-name">Server name</label>
+        <input id="s-name" type="text" maxlength="48" value="${esc(sv.name)}">
+        <div class="hint">Shown on MZForge. The join address stays the same.</div></div>
+      <div class="field"><label for="s-motd">Description (MOTD)</label>
+        <input id="s-motd" type="text" maxlength="120" value="${esc(sv.motd)}" placeholder="${esc(sv.name)}">
+        <div class="hint">The line under your server's name in Minecraft's Multiplayer list. Colours: &amp;6gold, &amp;bcyan, &amp;lbold, &amp;r reset.</div>
+        <div class="motd-preview" aria-hidden="true"><span class="t">${esc(sv.name)}</span><span id="s-motd-preview">${motdPreviewHTML(sv.motd || sv.name)}</span></div></div>
+      <div class="settings-grid">
+        <div class="field"><label for="s-max">Max players</label>
+          <input id="s-max" type="text" inputmode="numeric" value="${esc(sv.max_players)}"></div>
+        <div class="field"><label for="s-mode">Game mode</label>
+          <select id="s-mode">${opt("survival", sv.gamemode, "Survival")}${opt("creative", sv.gamemode, "Creative")}${opt("adventure", sv.gamemode, "Adventure")}</select></div>
+        <div class="field"><label for="s-diff">Difficulty</label>
+          <select id="s-diff">${opt("peaceful", sv.difficulty, "Peaceful")}${opt("easy", sv.difficulty, "Easy")}${opt("normal", sv.difficulty, "Normal")}${opt("hard", sv.difficulty, "Hard")}</select></div>
+        <div class="field"><span class="label">PvP</span>
+          <label class="check"><input type="checkbox" id="s-pvp" ${sv.pvp ? "checked" : ""}><span>Players can hurt each other</span></label></div>
+      </div>
+      <p class="hint" style="margin-top:0">Saved here, then applied to server.properties by MZForgeLauncher.exe the next time it starts. Restart the launcher to apply them to a running server. Game mode applies to new players; existing players keep theirs.</p>
+      <button class="btn primary" id="s-save">Save settings</button>
+    </form>
+
+    <section class="danger-zone panel">
+      <h2>Delete server</h2>
+      <p class="muted small">The launcher from this download stops working, and the address <b>mzf-${esc(sv.slug)}</b> is retired for good: nobody can use it again, including you. World files on your PC aren't touched.</p>
+      <form id="del"><label class="label" for="confirm">Type ${esc(sv.slug)} to confirm</label>
+        <div class="inline-form"><input id="confirm" type="text" autocomplete="off" spellcheck="false" autocapitalize="off"><button class="btn danger" id="delbtn" disabled>Delete server</button></div></form>
+    </section>`;
+}
+function wireSettings(sv, key) {
+  const id = sv.server_id;
+  const motd = $("s-motd"), name = $("s-name");
+  const preview = () => { $("s-motd-preview").innerHTML = motdPreviewHTML(motd.value || name.value); };
+  motd.oninput = preview; name.oninput = preview;
+  $("settings").onsubmit = async e => {
+    e.preventDefault();
+    const max = Number($("s-max").value);
+    if (!Number.isInteger(max) || max < 1 || max > 500) return formError("Max players must be a whole number from 1 to 500.");
+    const btn = $("s-save"); busy(btn, true, "Saving…");
+    try {
+      const r = await api("PATCH", `/servers/${id}`, {
+        name: name.value, motd: motd.value, max_players: max,
+        gamemode: $("s-mode").value, difficulty: $("s-diff").value, pvp: $("s-pvp").checked,
+      }, key);
+      remember(id, key, r.name); $("sname").textContent = r.name; setTitle(r.name);
+      formError(""); toast("Settings saved");
+    } catch (err) { formError(err.message); }
+    busy(btn, false, "Save settings");
+  };
+  const confirmI = $("confirm"), delbtn = $("delbtn");
+  confirmI.oninput = () => delbtn.disabled = confirmI.value.trim() !== sv.slug;
+  $("del").onsubmit = async e => {
+    e.preventDefault();
+    if (confirmI.value.trim() !== sv.slug) return;
+    busy(delbtn, true, "Deleting…");
+    try { await api("DELETE", `/servers/${id}`, undefined, key); forget(id); toast("Server deleted"); location.hash = "#/servers"; }
+    catch (err) { toast(err.message); busy(delbtn, false, "Delete server"); }
+  };
+}
+
+// ----- Mods & Plugins tab -----
+// Search goes straight to Modrinth's public API; adding sends only the
+// chosen version's id to MZForge, which re-checks it with Modrinth.
+const MODRINTH = "https://api.modrinth.com/v2";
+const MOD_LOADERS = { fabric: ["fabric"], paper: ["paper", "spigot", "bukkit"] };
+function modsTabHTML(sv) {
+  if (!MOD_LOADERS[sv.loader]) {
+    return `<div class="empty"><h2>Vanilla doesn't run mods or plugins</h2>
+      <p class="muted">This server uses Vanilla Minecraft. For plugins, create a Paper server; for mods, a Fabric server. You can copy your world folder across to the new server.</p>
+      <a class="btn primary" href="#/new">Create a server</a></div>`;
+  }
+  const what = sv.loader === "fabric" ? "mods" : "plugins";
+  return `
+    <section>
+      <h2>Installed ${what} <span class="muted small">(${sv.mods.length})</span></h2>
+      <ul class="mod-list" id="installed"></ul>
+      <p class="hint">New ${what} are downloaded by MZForgeLauncher.exe the next time it starts, and included when you use Download again. Removing one here doesn't delete it from your PC: delete the file from the <b>${esc(sv.mods_folder)}</b> folder too.</p>
+    </section>
+    <section class="panel">
+      <h2>Add ${what}</h2>
+      <p class="muted small">From <a href="https://modrinth.com" target="_blank" rel="noopener">Modrinth</a>, showing only ${what} for ${esc(loaderName(sv.loader))} ${esc(sv.mc_version)}${sv.loader === "fabric" ? " that run on a server" : ""}.</p>
+      <form class="search-row" id="msearch"><label class="sr-only" for="mq">Search ${what}</label>
+        <input id="mq" type="search" placeholder="Search ${what}, e.g. ${sv.loader === "fabric" ? "Lithium" : "EssentialsX"}" autocomplete="off"><button class="btn">Search</button></form>
+      <ul class="mod-list" id="results" aria-live="polite"></ul>
+    </section>`;
+}
+function modRowHTML(m, action) {
+  const icon = m.icon_url ? `<img src="${esc(m.icon_url)}" alt="" loading="lazy" onerror="this.outerHTML='<span class=noicon></span>'">` : `<span class="noicon"></span>`;
+  return `<li class="mod">${icon}<div><b>${esc(m.title)}</b><span class="meta">${esc(m.sub)}</span></div>${action}</li>`;
+}
+function wireMods(sv, key) {
+  if (!MOD_LOADERS[sv.loader]) return;
+  const id = sv.server_id;
+  let mods = sv.mods;
+  const what = sv.loader === "fabric" ? "mods" : "plugins";
+
+  const drawInstalled = () => {
+    $("installed").innerHTML = mods.length ? mods.map(m => modRowHTML(
+      { title: m.title, icon_url: m.icon_url, sub: `${m.version_number} (${m.filename})` },
+      `<button class="btn small ghost" data-remove="${esc(m.project_id)}">Remove</button>`)).join("")
+      : `<li class="muted">No ${what} yet. Search below to add some.</li>`;
+    const tabLink = document.querySelector(`.tabs a[href$="/mods"]`);
+    if (tabLink) tabLink.textContent = `${what[0].toUpperCase() + what.slice(1)}${mods.length ? ` (${mods.length})` : ""}`;
+  };
+  drawInstalled();
+
+  $("installed").onclick = async e => {
+    const b = e.target.closest("[data-remove]"); if (!b) return;
+    b.disabled = true;
+    try { const r = await api("DELETE", `/servers/${id}/mods/${b.dataset.remove}`, undefined, key); mods = r.mods; drawInstalled(); toast("Removed. Also delete its file from your " + sv.mods_folder + " folder."); }
+    catch (err) { toast(err.message); b.disabled = false; }
+  };
+
+  // Newest version of a project compatible with this server, or null.
+  const compatibleVersion = async projectId => {
+    const q = `loaders=${encodeURIComponent(JSON.stringify(MOD_LOADERS[sv.loader]))}&game_versions=${encodeURIComponent(JSON.stringify([sv.mc_version]))}`;
+    const res = await fetch(`${MODRINTH}/project/${encodeURIComponent(projectId)}/version?${q}`);
+    if (!res.ok) throw new Error("Couldn't reach Modrinth. Try again in a moment.");
+    const versions = await res.json();
+    return versions[0] || null;
+  };
+  // Adds a project plus its required dependencies (a few levels deep).
+  const addProject = async (projectId, depth = 0, added = []) => {
+    const v = await compatibleVersion(projectId);
+    if (!v) { if (depth === 0) throw new Error(`No version of this for ${loaderName(sv.loader)} ${sv.mc_version} yet.`); return added; }
+    const r = await api("POST", `/servers/${id}/mods`, { version_id: v.id }, key);
+    mods = r.mods; added.push(r.added.title);
+    if (depth < 3) for (const dep of r.missing_dependencies) { try { await addProject(dep, depth + 1, added); } catch {} }
+    return added;
+  };
+
+  let lastQuery = null;
+  const search = async q => {
+    lastQuery = q;
+    const f = sv.loader === "fabric"
+      ? [["categories:fabric"], [`versions:${sv.mc_version}`], ["project_type:mod"], ["server_side:required", "server_side:optional"]]
+      : [["categories:paper", "categories:spigot", "categories:bukkit"], [`versions:${sv.mc_version}`]];
+    const url = `${MODRINTH}/search?limit=20&index=${q ? "relevance" : "downloads"}&query=${encodeURIComponent(q)}&facets=${encodeURIComponent(JSON.stringify(f))}`;
+    $("results").innerHTML = `<li class="muted">Searching…</li>`;
+    let data;
+    try { const res = await fetch(url); if (!res.ok) throw 0; data = await res.json(); }
+    catch { if (lastQuery === q) $("results").innerHTML = `<li class="muted">Couldn't reach Modrinth. Try again in a moment.</li>`; return; }
+    if (lastQuery !== q) return;
+    const hits = data.hits || [];
+    $("results").innerHTML = hits.length ? hits.map(h => {
+      const have = mods.some(m => m.project_id === h.project_id);
+      return modRowHTML(
+        { title: h.title, icon_url: String(h.icon_url || "").startsWith("https://cdn.modrinth.com/") ? h.icon_url : "", sub: `${h.description} (${Number(h.downloads).toLocaleString()} downloads)` },
+        have ? `<span class="muted small">Added</span>` : `<button class="btn small primary" data-add="${esc(h.project_id)}">Add</button>`);
+    }).join("") : `<li class="muted">Nothing found for ${esc(loaderName(sv.loader))} ${esc(sv.mc_version)}.</li>`;
+  };
+  $("msearch").onsubmit = e => { e.preventDefault(); search($("mq").value.trim()); };
+  $("results").onclick = async e => {
+    const b = e.target.closest("[data-add]"); if (!b) return;
+    b.disabled = true; b.textContent = "Adding…";
+    try {
+      const added = await addProject(b.dataset.add);
+      drawInstalled();
+      b.replaceWith(Object.assign(document.createElement("span"), { className: "muted small", textContent: "Added" }));
+      toast(added.length > 1 ? `Added ${added[0]}, plus required ${added.slice(1).join(", ")}` : `Added ${added[0]}`);
+    } catch (err) { toast(err.message); b.disabled = false; b.textContent = "Add"; }
+  };
+  search("");
 }
 
 function setupHTML(sv, jar, withHeading = true) {
@@ -962,6 +1225,7 @@ async function viewShare(id) {
       <p class="muted">${esc(loaderName(sv.loader))} ${esc(sv.mc_version)}. Join with the same Minecraft version.</p>
       ${plateHTML(sv, { big: true, caption: "Join address" })}
       <p class="status-line muted">${esc(line)} This page checks again every 20 seconds.</p>
+      ${sv.expired ? `<div class="alert warn">This server's 30 days have run out. ${mine ? `<a href="#/servers/${esc(sv.server_id)}">Renew it</a> to keep the address.` : "Its owner needs to renew it, or it will be removed soon."}</div>` : ""}
       ${mine ? `<p><a href="#/servers/${esc(sv.server_id)}">Manage this server</a></p>`
              : `<p class="small muted" style="margin-top:36px">Want your own? <a href="#/">MZForge</a> gives you a free server that runs on your PC. No account needed.</p>`}
     </div>`;
@@ -976,9 +1240,9 @@ async function viewShare(id) {
 function viewHelp(anchor) {
   setTitle("Help");
   const toc = [
-    ["how", "How MZForge works"], ["manage", "No account? How managing works"], ["needs", "What you need"], ["server-jar", "Getting server.jar"],
+    ["how", "How MZForge works"], ["manage", "No account? How managing works"], ["renew", "Keeping your address (30 days)"], ["needs", "What you need"], ["server-jar", "Getting server.jar"],
     ["java", "Java"], ["running", "Running your server"], ["antivirus", "Windows and antivirus warnings"],
-    ["troubleshooting", "Friends can't join"], ["branded", "The .mc.mzforge.com address"], ["world", "Your world and backups"],
+    ["mods", "Mods and plugins"], ["settings", "Server settings"], ["troubleshooting", "Friends can't join"], ["branded", "The .mc.mzforge.com address"], ["world", "Your world and backups"],
   ];
   $app.innerHTML = `
   <div class="wrap">
@@ -999,6 +1263,11 @@ function viewHelp(anchor) {
           </ul>
           <p>Don't share the manage link. Friends only need the join address, or the status page link if they want to check whether the server is up.</p>
           <p>Lost both the link and the folder? There's no way to recover it, because there's no account to recover. The server keeps working for anyone who has the launcher folder; you just can't manage it from the website.</p></section>
+
+        <section id="h-renew"><h2>Keeping your address (30 days)</h2>
+          <p>Each server's address is held for 30 days at a time, so abandoned servers don't keep names forever. You don't usually need to do anything: <b>every time your server runs, the 30 days start over</b>.</p>
+          <p>If it goes unused for 30 days, it's removed within a day and its address becomes free for anyone. Your server page shows how long is left and warns you in the last week. To keep it without running it, click <b>Renew server (30 days)</b> there, or double-click <b>Renew-Server.url</b> in your server folder to get to that page.</p>
+          <p>If you start the launcher after the 30 days ran out, it opens the renew page for you. If the server was already removed, you can create a new one, even with the same name if nobody took it. Your world files on your PC are never deleted.</p></section>
 
         <section id="h-needs"><h2>What you need</h2>
           <ul>
@@ -1034,6 +1303,17 @@ function viewHelp(anchor) {
           <p>MZForgeLauncher.exe is new and not yet code-signed, so Windows SmartScreen may say "Windows protected your PC". Choose <span class="kbd">More info</span>, then <span class="kbd">Run anyway</span>. Some antivirus tools flag unsigned programs that open network connections; you can add an exception for your MZForge folder.</p>
           <p>Only run a launcher you downloaded yourself from MZForge. If you're unsure about a copy, delete the folder and use Download again from your server's page.</p>
           <p>If Windows Firewall asks about Java, allowing it on private networks is fine. No port forwarding or router setup is needed, because the tunnel connects outward.</p></section>
+
+        <section id="h-mods"><h2>Mods and plugins</h2>
+          <p>Paper servers run plugins and Fabric servers run mods; Vanilla runs neither. On your server page, open the <b>Mods</b> or <b>Plugins</b> tab to search <a href="https://modrinth.com" target="_blank" rel="noopener">Modrinth</a>. Results only show versions that match your server's software and Minecraft version, and anything a mod needs to work (like Fabric API) is added with it.</p>
+          <ul>
+            <li>The launcher downloads newly added ones the next time it starts, and Download again includes them too.</li>
+            <li>Removing one on the website doesn't delete it from your PC. Delete its file from the mods or plugins folder as well.</li>
+            <li>Players joining a Fabric server with client-side mods (like maps or shaders) install those themselves; the server list only shows mods that run on servers.</li>
+          </ul></section>
+
+        <section id="h-settings"><h2>Server settings</h2>
+          <p>The <b>Settings</b> tab sets your server's description in the Multiplayer list (with colour codes like &amp;6 for gold), max players, game mode, difficulty and PvP. They're saved into server.properties by the launcher each time it starts, so restart the launcher to apply changes. Other lines in server.properties are yours to edit and are left alone.</p></section>
 
         <section id="h-troubleshooting"><h2>Friends can't join</h2>
           <ul>

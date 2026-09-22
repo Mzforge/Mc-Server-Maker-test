@@ -38,10 +38,29 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS rate_limits (key TEXT PRIMARY KEY, win INTEGER NOT NULL, count INTEGER NOT NULL)`,
 ];
 
+// Columns added after the first release. Added in place on existing
+// databases, so a deployed MZForge upgrades itself on the next request.
+const ADDED_COLUMNS = {
+  expires_at: `TEXT NOT NULL DEFAULT ''`,
+  motd: `TEXT NOT NULL DEFAULT ''`,
+  max_players: `INTEGER NOT NULL DEFAULT 20`,
+  pvp: `INTEGER NOT NULL DEFAULT 1`,
+  gamemode: `TEXT NOT NULL DEFAULT 'survival'`,
+  difficulty: `TEXT NOT NULL DEFAULT 'easy'`,
+  mods: `TEXT NOT NULL DEFAULT '[]'`,
+};
+
 let schemaReady = false;
 async function ensureSchema(db) {
   if (schemaReady) return;
   await db.batch(SCHEMA.map((sql) => db.prepare(sql)));
+  const { results } = await db.prepare(`PRAGMA table_info(servers)`).all();
+  const have = new Set(results.map((c) => c.name));
+  for (const [col, type] of Object.entries(ADDED_COLUMNS)) {
+    if (!have.has(col)) await db.prepare(`ALTER TABLE servers ADD COLUMN ${col} ${type}`).run();
+  }
+  // Servers created before expiry existed get a fresh 30 days, not instant deletion.
+  await db.prepare(`UPDATE servers SET expires_at = ?1 WHERE expires_at = ''`).bind(inDays(RENEW_DAYS)).run();
   schemaReady = true;
 }
 
@@ -89,6 +108,17 @@ async function readJSON(request) {
 const clientIP = (request) => request.headers.get("CF-Connecting-IP") || "local";
 const now = () => new Date().toISOString();
 
+// ---------------------------------------------------------------- expiry
+//
+// A server's address is held for 30 days. Clicking Renew, or the launcher
+// reporting the server online (someone is actually using it), restarts the
+// 30 days. A daily cron removes servers past expires_at and frees the name.
+const RENEW_DAYS = 30;
+const DAY_MS = 86_400_000;
+const inDays = (n) => new Date(Date.now() + n * DAY_MS).toISOString();
+const isExpired = (rec) => !!rec.expires_at && Date.parse(rec.expires_at) <= Date.now();
+const daysLeft = (rec) => Math.max(0, Math.ceil((Date.parse(rec.expires_at) - Date.now()) / DAY_MS));
+
 // Fixed-window rate limit stored in D1. Returns true if allowed.
 async function allow(env, key, max, windowSec) {
   const win = Math.floor(Date.now() / 1000 / windowSec);
@@ -122,6 +152,79 @@ function cleanName(raw) {
 }
 
 const LOADERS = new Set(["vanilla", "paper", "fabric"]);
+
+// ---------------------------------------------------------------- server settings
+
+const GAMEMODES = new Set(["survival", "creative", "adventure"]);
+const DIFFICULTIES = new Set(["peaceful", "easy", "normal", "hard"]);
+
+// Validates the settings fields present in req. Returns [updates, error].
+function parseSettings(req) {
+  const u = {};
+  if ("motd" in req) {
+    const motd = String(req.motd ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").trim();
+    if ([...motd].length > 120) return [null, "description must be 120 characters or fewer"];
+    u.motd = motd;
+  }
+  if ("max_players" in req) {
+    const n = Number(req.max_players);
+    if (!Number.isInteger(n) || n < 1 || n > 500) return [null, "max players must be a whole number from 1 to 500"];
+    u.max_players = n;
+  }
+  if ("pvp" in req) {
+    if (typeof req.pvp !== "boolean") return [null, "pvp must be true or false"];
+    u.pvp = req.pvp ? 1 : 0;
+  }
+  if ("gamemode" in req) {
+    if (!GAMEMODES.has(req.gamemode)) return [null, "game mode must be survival, creative, or adventure"];
+    u.gamemode = req.gamemode;
+  }
+  if ("difficulty" in req) {
+    if (!DIFFICULTIES.has(req.difficulty)) return [null, "difficulty must be peaceful, easy, normal, or hard"];
+    u.difficulty = req.difficulty;
+  }
+  return [u, null];
+}
+
+// Java .properties value escaping. Minecraft has read server.properties as
+// ISO-8859-1 or UTF-8 depending on version, so anything non-ASCII is written
+// as \uXXXX, which every version reads correctly. "&" colour codes
+// (&6Gold, &lBold) become Minecraft's section-sign codes.
+function propValue(v) {
+  const colored = String(v).replace(/&([0-9a-fk-or])/gi, "\u00a7$1");
+  let out = "";
+  for (const ch of colored) {
+    const cp = ch.codePointAt(0);
+    if (ch === "\\") out += "\\\\";
+    else if (cp >= 0x20 && cp < 0x7f) out += ch;
+    else if (cp < 0x10000) out += "\\u" + cp.toString(16).padStart(4, "0");
+    else { // surrogate pair
+      const c = cp - 0x10000;
+      out += "\\u" + (0xd800 + (c >> 10)).toString(16) + "\\u" + (0xdc00 + (c & 0x3ff)).toString(16);
+    }
+  }
+  return out.replace(/^([ #!])/, "\\$1"); // keep a leading space/#/! from being eaten
+}
+
+// The keys MZForge manages. The launcher applies these same values on
+// every start, leaving every other line of server.properties alone.
+function managedProperties(rec) {
+  return {
+    motd: propValue(rec.motd || rec.display_name),
+    "max-players": String(rec.max_players),
+    pvp: rec.pvp ? "true" : "false",
+    gamemode: rec.gamemode,
+    difficulty: rec.difficulty,
+  };
+}
+
+function serverPropertiesFile(rec) {
+  const lines = ["#Minecraft server properties", "#Generated by MZForge. motd, max-players, pvp, gamemode and difficulty",
+    "#are set on the website and re-applied by MZForgeLauncher.exe on every start.",
+    "#Everything else can be edited here; Minecraft adds the remaining defaults on first run."];
+  for (const [k, v] of Object.entries(managedProperties(rec))) lines.push(`${k}=${v}`);
+  return lines.join("\n") + "\n";
+}
 const VERSION_RE = /^[0-9]{1,2}\.[0-9]{1,2}(\.[0-9]{1,2})?$/;
 const FALLBACK_VERSIONS = ["1.21.8", "1.21.7", "1.21.6", "1.21.5", "1.21.4", "1.21.1",
   "1.20.6", "1.20.4", "1.20.1", "1.19.4", "1.18.2", "1.16.5", "1.12.2"];
@@ -131,6 +234,105 @@ async function slugTaken(env, slug) {
     `SELECT 1 FROM servers WHERE slug = ?1 UNION ALL SELECT 1 FROM retired_slugs WHERE slug = ?1 LIMIT 1`
   ).bind(slug).first();
   return !!r;
+}
+
+// ---------------------------------------------------------------- mods & plugins (Modrinth)
+//
+// The website searches Modrinth directly. To add a mod it sends only a
+// Modrinth version id; the Worker fetches that version from Modrinth itself
+// and checks loader + Minecraft version before saving, so a stored download
+// URL always comes from Modrinth's own CDN, never from the client.
+
+const MODRINTH = "https://api.modrinth.com/v2";
+const MOD_LOADERS = { fabric: ["fabric"], paper: ["paper", "spigot", "bukkit"] };
+const MAX_MODS = 60;
+const modsFolder = (loader) => (loader === "fabric" ? "mods" : loader === "paper" ? "plugins" : "");
+function parseMods(rec) {
+  try { return JSON.parse(rec.mods || "[]"); } catch { return []; }
+}
+
+async function modrinth(env, path) {
+  const res = await fetch((env.MODRINTH_API || MODRINTH) + path, {
+    headers: { "User-Agent": "MZForge/1.0 (Minecraft server hosting dashboard)" },
+    cf: { cacheTtl: 300, cacheEverything: true },
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Modrinth HTTP ${res.status}`);
+  return res.json();
+}
+
+async function handleMods(request, env, rec, modId) {
+  const loaders = MOD_LOADERS[rec.loader];
+  if (!loaders) return err(400, "Vanilla servers can't run mods or plugins. Create a Paper server for plugins or a Fabric server for mods");
+  let mods = parseMods(rec);
+  const save = () => env.DB.prepare(`UPDATE servers SET mods = ?1 WHERE server_id = ?2`).bind(JSON.stringify(mods), rec.server_id).run();
+
+  if (request.method === "GET" && !modId) return json({ mods, mods_folder: modsFolder(rec.loader) });
+
+  if (request.method === "DELETE" && modId) {
+    mods = mods.filter((m) => m.project_id !== modId);
+    await save();
+    return json({ mods, mods_folder: modsFolder(rec.loader) });
+  }
+
+  if (request.method === "POST" && !modId) {
+    if (!(await allow(env, `mods:${rec.server_id}`, 120, 3600))) return err(429, "too many changes — try again in a bit");
+    let req;
+    try { req = await readJSON(request); } catch { return err(400, "invalid JSON body"); }
+    const versionId = String(req?.version_id || "");
+    if (!/^[A-Za-z0-9]{1,16}$/.test(versionId)) return err(400, "invalid version_id");
+
+    let v;
+    try { v = await modrinth(env, `/version/${versionId}`); } catch { return err(502, "couldn't reach Modrinth — try again in a moment"); }
+    if (!v) return err(404, "that version doesn't exist on Modrinth");
+    const kind = rec.loader === "fabric" ? "Fabric" : "Paper";
+    if (!(v.loaders || []).some((l) => loaders.includes(l))) return err(400, `that version isn't for ${kind}`);
+    if (!(v.game_versions || []).includes(rec.mc_version)) return err(400, `that version isn't for Minecraft ${rec.mc_version}`);
+    const file = (v.files || []).find((f) => f.primary) || (v.files || [])[0];
+    if (!file || !String(file.url).startsWith("https://cdn.modrinth.com/") || !/^[\w.+\-() ]{1,120}\.jar$/.test(file.filename)) {
+      return err(400, "that version has no usable .jar file");
+    }
+    const others = mods.filter((m) => m.project_id !== v.project_id);
+    if (others.length >= MAX_MODS) return err(400, `a server can have at most ${MAX_MODS} mods or plugins here`);
+    if (others.some((m) => m.filename.toLowerCase() === file.filename.toLowerCase())) return err(409, "another mod already uses that file name");
+
+    let proj = null;
+    try { proj = await modrinth(env, `/project/${v.project_id}`); } catch { /* title falls back below */ }
+    const entry = {
+      project_id: v.project_id,
+      version_id: v.id,
+      title: proj?.title || file.filename,
+      slug: proj?.slug || v.project_id,
+      icon_url: String(proj?.icon_url || "").startsWith("https://cdn.modrinth.com/") ? proj.icon_url : "",
+      version_number: v.version_number,
+      filename: file.filename,
+      url: file.url,
+      sha512: file.hashes?.sha512 || "",
+      size: file.size || 0,
+    };
+    mods = [...others, entry];
+    await save();
+    const missing = (v.dependencies || [])
+      .filter((d) => d.dependency_type === "required" && d.project_id && !mods.some((m) => m.project_id === d.project_id))
+      .map((d) => d.project_id);
+    return json({ mods, mods_folder: modsFolder(rec.loader), added: entry, missing_dependencies: [...new Set(missing)] });
+  }
+  return err(405, "method not allowed");
+}
+
+// Mod files are fetched through the Worker so the browser can zip them
+// without depending on the CDN's CORS settings. Modrinth's CDN only.
+async function handleModFile(request, env, url) {
+  if (!(await allow(env, `modfile:${clientIP(request)}`, 600, 3600))) return err(429, "too many downloads — try again later");
+  const target = url.searchParams.get("url") || "";
+  if (!/^https:\/\/cdn\.modrinth\.com\/data\/[A-Za-z0-9]+\/versions\/[A-Za-z0-9]+\/[^?#]+\.jar$/.test(target)) {
+    return err(400, "only Modrinth mod files can be downloaded here");
+  }
+  // MODRINTH_CDN_TEST: local testing only, points the CDN at a fake server.
+  const from = env.MODRINTH_CDN_TEST ? target.replace("https://cdn.modrinth.com", env.MODRINTH_CDN_TEST) : target;
+  const res = await fetch(from, { cf: { cacheTtl: 86400, cacheEverything: true } });
+  if (!res.ok) return err(502, `couldn't download that file from Modrinth (HTTP ${res.status})`);
+  return new Response(res.body, { headers: { "Content-Type": "application/java-archive", "Cache-Control": "public, max-age=86400", ...CORS } });
 }
 
 // ---------------------------------------------------------------- Mojang metadata
@@ -272,9 +474,23 @@ async function view(env, rec, owned) {
     status: ls.status,
     live_version: ls.version || undefined,
     last_seen: rec.last_seen || undefined,
+    expires_at: rec.expires_at,
+    days_left: daysLeft(rec),
+    expired: isExpired(rec),
+    motd: rec.motd || "",
     owned,
   };
-  if (owned) v.created_at = rec.created_at;
+  if (owned) {
+    Object.assign(v, {
+      created_at: rec.created_at,
+      max_players: rec.max_players,
+      pvp: !!rec.pvp,
+      gamemode: rec.gamemode,
+      difficulty: rec.difficulty,
+      mods: parseMods(rec),
+      mods_folder: modsFolder(rec.loader),
+    });
+  }
   return v;
 }
 
@@ -282,10 +498,17 @@ async function view(env, rec, owned) {
 //
 // The browser zips these together with /MZForgeLauncher.exe.
 
-function downloadFiles(rec, apiBase, jar, manageURL) {
+function downloadFiles(rec, apiBase, jar, manageURL, webURL) {
   const properties =
     `server-id=${rec.server_id}\nserver-token=${rec.server_token}\nhostname=${rec.hostname}\nmc-port=25565\n` +
-    `api-base=${apiBase}\nconnect-endpoint=${rec.connect_endpoint}\nloader=${rec.loader}\nmc-version=${rec.mc_version}\n`;
+    `api-base=${apiBase}\nconnect-endpoint=${rec.connect_endpoint}\nloader=${rec.loader}\nmc-version=${rec.mc_version}\n` +
+    `renew-url=${manageURL}\nweb-url=${webURL}\n`;
+  const mods = parseMods(rec);
+  const folder = modsFolder(rec.loader);
+  const modsNote = mods.length
+    ? `\n${folder === "mods" ? "MODS" : "PLUGINS"} (in the ${folder} folder, from Modrinth):\n` + mods.map((m) => `  - ${m.title} ${m.version_number}`).join("\n") +
+      `\nAdd or remove them on your server page. The launcher downloads newly added\nones on start; removed ones you delete from the ${folder} folder yourself.\n`
+    : "";
   const loaderName = { paper: "Paper", fabric: "Fabric", vanilla: "Vanilla" }[rec.loader] || rec.loader;
   let getJar = `${jar.instruction}\n   From ${jar.source_name}: ${jar.page_url}`;
   if (jar.direct_url) getJar += `\n   Direct link (official Mojang file): ${jar.direct_url}`;
@@ -306,6 +529,12 @@ BEFORE THE FIRST RUN
 Your server only exists while MZForgeLauncher.exe is running on this PC.
 Closing the window (or shutting down / sleeping the PC) takes it offline.
 
+STAYING ACTIVE
+Your address is held for 30 days at a time. It renews by itself whenever
+this server runs. If it goes unused for 30 days it's removed and the name is
+freed. To renew by hand, double-click Renew-Server.url (or use the manage
+link below) and click Renew.
+${modsNote}
 Reserved for later: ${rec.custom_hostname}
 That branded address isn't live yet. Minekube (the free tunnel network
 MZForge uses) needs a manual step on their side per server, and we're
@@ -317,11 +546,26 @@ There are no MZForge accounts: this link is the key to your server.
 Anyone who has it can delete the server, so don't share it. Share the
 join address instead.
 
-Keep mzforge.properties private too: it contains this server's secret token.
+Keep mzforge.properties and Renew-Server.url private too: one holds this
+server's secret token, the other is its manage link.
+
+SERVER SETTINGS
+Description (MOTD), max players, PvP, game mode and difficulty are set on
+your server page. The launcher applies them each time it starts.
 `.replace(/\r?\n/g, "\r\n");
+  // Windows internet shortcut: double-click opens the server's manage page.
+  const renewShortcut = `[InternetShortcut]\r\nURL=${manageURL}\r\n`;
   return {
     filename: `mzforge-${rec.slug}.zip`,
-    files: { "mzforge.properties": properties, "eula.txt": "eula=true\n", "README.txt": readme },
+    files: {
+      "mzforge.properties": properties,
+      "eula.txt": "eula=true\n",
+      "server.properties": serverPropertiesFile(rec),
+      "README.txt": readme,
+      "Renew-Server.url": renewShortcut,
+    },
+    mods_folder: folder,
+    mods: mods.map(({ title, filename, url, sha512 }) => ({ title, filename, url, sha512 })),
   };
 }
 
@@ -376,6 +620,8 @@ async function handleAllocate(request, env, url) {
     mc_version: mcVersion,
     eula_accepted_at: now(),
     created_at: now(),
+    expires_at: inDays(RENEW_DAYS),
+    max_players: 20, pvp: 1, gamemode: "survival", difficulty: "easy", motd: "", mods: "[]",
   };
 
   // Insert first: the UNIQUE(slug) constraint settles races between two
@@ -383,10 +629,11 @@ async function handleAllocate(request, env, url) {
   try {
     await env.DB.prepare(
       `INSERT INTO servers (server_id, server_token, manage_key_hash, slug, display_name, hostname, custom_hostname,
-         connect_endpoint, loader, mc_version, eula_accepted_at, created_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`
+         connect_endpoint, loader, mc_version, eula_accepted_at, created_at, expires_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)`
     ).bind(rec.server_id, rec.server_token, rec.manage_key_hash, rec.slug, rec.display_name, rec.hostname,
-      rec.custom_hostname, rec.connect_endpoint, rec.loader, rec.mc_version, rec.eula_accepted_at, rec.created_at).run();
+      rec.custom_hostname, rec.connect_endpoint, rec.loader, rec.mc_version, rec.eula_accepted_at, rec.created_at,
+      rec.expires_at).run();
   } catch (e) {
     if (/UNIQUE/i.test(String(e))) return err(409, `"${slug}" is already in use, pick another name`);
     throw e;
@@ -410,7 +657,7 @@ async function handleAllocate(request, env, url) {
     custom_hostname: rec.custom_hostname,
     connect_endpoint: rec.connect_endpoint,
     manage_key: manageKey, // only ever returned here
-    download: downloadFiles(rec, url.origin, jar, manageURL),
+    download: downloadFiles(rec, url.origin, jar, manageURL, webBase(env, url)),
   });
 }
 
@@ -427,15 +674,23 @@ async function managed(request, env, id) {
   return [rec, key, null];
 }
 
-async function handleServer(request, env, url, id, sub) {
+async function handleServer(request, env, url, id, sub, modId) {
   const [rec, key, fail] = await managed(request, env, id);
   if (fail) return fail;
+
+  if (sub === "renew" && request.method === "POST") {
+    rec.expires_at = inDays(RENEW_DAYS);
+    await env.DB.prepare(`UPDATE servers SET expires_at = ?1 WHERE server_id = ?2`).bind(rec.expires_at, id).run();
+    return json(await view(env, rec, true));
+  }
+  if (sub === "mods") return handleMods(request, env, rec, modId);
+  if (modId) return err(404, "not found");
 
   if (sub === "files" && request.method === "POST") {
     if (!(await allow(env, `download:${id}`, 30, 3600))) return err(429, "too many downloads — try again later");
     const jar = await jarSource(rec.loader, rec.mc_version);
     const manageURL = `${webBase(env, url)}/#/manage/${rec.server_id}/${key}`;
-    return json({ server_id: rec.server_id, download: downloadFiles(rec, url.origin, jar, manageURL) });
+    return json({ server_id: rec.server_id, download: downloadFiles(rec, url.origin, jar, manageURL, webBase(env, url)) });
   }
   if (sub) return err(404, "not found");
 
@@ -444,10 +699,19 @@ async function handleServer(request, env, url, id, sub) {
   if (request.method === "PATCH") {
     let req;
     try { req = await readJSON(request); } catch { return err(400, "invalid JSON body"); }
-    const [name, e] = cleanName(req?.name);
+    if (!req || typeof req !== "object") return err(400, "invalid JSON body");
+    const [updates, e] = parseSettings(req);
     if (e) return err(400, e);
-    await env.DB.prepare(`UPDATE servers SET display_name = ?1 WHERE server_id = ?2`).bind(name, id).run();
-    rec.display_name = name;
+    if ("name" in req) {
+      const [name, ne] = cleanName(req.name);
+      if (ne) return err(400, ne);
+      updates.display_name = name;
+    }
+    const cols = Object.keys(updates);
+    if (!cols.length) return err(400, "nothing to change");
+    await env.DB.prepare(`UPDATE servers SET ${cols.map((c, i) => `${c} = ?${i + 1}`).join(", ")} WHERE server_id = ?${cols.length + 1}`)
+      .bind(...cols.map((c) => updates[c]), id).run();
+    Object.assign(rec, updates);
     return json(await view(env, rec, true));
   }
 
@@ -500,13 +764,35 @@ async function handleAnnounce(request, env) {
   const [rec, fail] = await launcherAuth(request, env, req?.server_id);
   if (fail) return fail;
   if (req.status !== "online" && req.status !== "offline") return err(400, `status must be "online" or "offline"`);
+  // A server that's actually running is in use: restart its 30 days
+  // (unless it already expired: then only Renew brings it back).
   await env.DB.prepare(
     `UPDATE servers SET status = ?1, last_seen = ?2,
        verified_version = CASE WHEN ?3 != '' THEN ?3 ELSE verified_version END,
-       checked_at = 0, live_status = ''
+       checked_at = 0, live_status = '',
+       expires_at = CASE WHEN ?1 = 'online' AND expires_at > ?2 AND expires_at < ?5 THEN ?5 ELSE expires_at END
      WHERE server_id = ?4`
-  ).bind(req.status, now(), String(req.verified_version || ""), rec.server_id).run();
+  ).bind(req.status, now(), String(req.verified_version || ""), rec.server_id, inDays(RENEW_DAYS)).run();
   return new Response(null, { status: 204 });
+}
+
+// The launcher calls this on startup (new launchers only). 403 = expired but
+// renewable, 404 = gone. Otherwise it returns what the launcher should apply:
+// the website's server.properties values and the mod list.
+async function handleLauncherCheck(request, env, url) {
+  let req;
+  try { req = await readJSON(request); } catch { return err(400, "invalid JSON body"); }
+  const [rec, fail] = await launcherAuth(request, env, req?.server_id);
+  if (fail) return fail.status === 404 ? err(404, "this server no longer exists: it was deleted, or expired and was removed") : fail;
+  if (isExpired(rec)) return json({ error: "expired", expired: true, expires_at: rec.expires_at }, 403);
+  return json({
+    expires_at: rec.expires_at,
+    days_left: daysLeft(rec),
+    properties: managedProperties(rec),
+    mods_folder: modsFolder(rec.loader),
+    mods: parseMods(rec).map(({ title, filename, url, sha512 }) => ({ title, filename, url, sha512 })),
+    website: webBase(env, url),
+  });
 }
 
 async function handleProbe(request, env) {
@@ -556,9 +842,40 @@ function handleEula(env) {
   return json(out, 200, { "Cache-Control": "public, max-age=3600" });
 }
 
+// ---------------------------------------------------------------- daily cleanup
+
+// Removes servers whose 30 days ran out: deletes the reserved DNS record and
+// the row, which frees the name for anyone. A server whose DNS cleanup fails
+// is left for the next run rather than leaving an orphaned record.
+async function purgeExpired(env) {
+  await ensureSchema(env.DB);
+  const cutoff = now();
+  const { results } = await env.DB.prepare(
+    `SELECT server_id, slug, cf_record_id FROM servers WHERE expires_at != '' AND expires_at <= ?1 LIMIT 200`
+  ).bind(cutoff).all();
+  let removed = 0;
+  for (const r of results) {
+    try {
+      await cfDeleteRecord(env, r.cf_record_id);
+    } catch (e) {
+      console.log(`purge ${r.server_id}: DNS delete failed, retrying tomorrow: ${e.message}`);
+      continue;
+    }
+    // "AND expires_at <= cutoff" so a Renew that lands mid-purge wins.
+    const res = await env.DB.prepare(`DELETE FROM servers WHERE server_id = ?1 AND expires_at <= ?2`).bind(r.server_id, cutoff).run();
+    removed += res.meta?.changes || 0;
+  }
+  console.log(`purge: ${removed} expired server(s) removed`);
+  return removed;
+}
+
 // ---------------------------------------------------------------- router
 
 export default {
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(purgeExpired(env));
+  },
+
   async fetch(request, env) {
     const url = new URL(request.url);
     const p = url.pathname;
@@ -577,9 +894,11 @@ export default {
       if (p === "/meta/server-jar" && m === "GET") return await handleJarSource(url);
       if (p === "/meta/eula" && m === "GET") return handleEula(env);
       if (p === "/meta/mode" && m === "GET") return json({ test_mode: testMode(env) });
+      if (p === "/modfile" && m === "GET") return await handleModFile(request, env, url);
+      if (p === "/launcher/check" && m === "POST") return await handleLauncherCheck(request, env, url);
 
-      const sm = p.match(/^\/servers\/([a-f0-9]{16})(?:\/(files))?$/);
-      if (sm) return await handleServer(request, env, url, sm[1], sm[2]);
+      const sm = p.match(/^\/servers\/([a-f0-9]{16})(?:\/(files|renew|mods)(?:\/([A-Za-z0-9]{1,16}))?)?$/);
+      if (sm) return await handleServer(request, env, url, sm[1], sm[2], sm[3]);
 
       // Anything else: the website (index.html, MZForgeLauncher.exe, ...).
       if (env.ASSETS) return env.ASSETS.fetch(request);
