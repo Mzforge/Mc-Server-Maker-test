@@ -1,0 +1,24 @@
+# MZForge on Cloudflare Workers (free plan).
+# Everything lives in one folder: no subfolders needed.
+name = "mzforge"
+main = "index.js"
+compatibility_date = "2025-09-01"
+
+# The website files are served straight from this folder.
+# .assetsignore makes sure ONLY index.html, _headers and MZForgeLauncher.exe
+# are public — never the code, settings or anything else.
+[assets]
+directory = "."
+binding = "ASSETS"
+
+# Database: created automatically on the first deploy.
+[[d1_databases]]
+binding = "DB"
+database_name = "mzforge"
+
+[vars]
+MZFORGE_DOMAIN = "mzforge.com"
+MAX_CREATIONS_PER_DAY = "5"
+
+[observability]
+enabled = true
