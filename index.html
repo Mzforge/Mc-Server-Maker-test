@@ -4,25 +4,29 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
-<meta name="theme-color" content="#161B26">
+<meta name="theme-color" content="#070D18">
 <title>MZForge — free Minecraft servers that run on your own PC</title>
 <meta name="description" content="Create a Minecraft Java server in a minute, no account needed. It runs on your PC, so there's no queue and no player cap. We give it an address your friends can join.">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%23161B26'/><rect x='3' y='3' width='10' height='10' fill='%23F4C95D'/><rect x='5' y='5' width='6' height='6' fill='%23161B26'/></svg>">
+<link rel="icon" type="image/png" href="logo-64.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Chakra+Petch:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg: #161B26;
-  --surface: #1F2634;
-  --raised: #283043;
-  --line: #36405A;
-  --text: #ECEAE3;
-  --muted: #9AA2B5;
-  --glow: #F4C95D;
-  --glow-ink: #2A2106;
-  --online: #5FD6B8;
-  --danger: #EE6A5F;
+  /* Palette sampled from the MZForge logo: dark forge, blue-grey stone,
+     ice-cyan glow, ember banners. */
+  --bg: #070D18;
+  --surface: #0F1826;
+  --raised: #182436;
+  --line: #26364E;
+  --text: #E7EEF6;
+  --muted: #8D9BB0;
+  --glow: #2FD8FF;
+  --glow-soft: rgba(47,216,255,.16);
+  --glow-ink: #021018;
+  --warn: #F2B544;
+  --online: #63DB6A;
+  --danger: #E8553A;
   --display: "Chakra Petch", "Segoe UI", system-ui, sans-serif;
   --body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
   --r: 6px;
@@ -33,9 +37,16 @@
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 *, *::before, *::after { box-sizing: inherit; }
+[hidden] { display: none !important; }
+details > summary.label { list-style: none; }
+details > summary.label::-webkit-details-marker { display: none; }
+details > summary.label::before { content: "▸"; display: inline-block; width: 1.1em; color: var(--glow); }
+details[open] > summary.label::before { content: "▾"; }
 html { scroll-padding-top: calc(env(safe-area-inset-top, 0px) + 72px); }
 body {
-  margin: 0; background: var(--bg); color: var(--text);
+  margin: 0; color: var(--text);
+  background: radial-gradient(1200px 600px at 80% -10%, rgba(47,216,255,.08), transparent 60%), var(--bg);
+  background-attachment: fixed;
   font: 17px/1.55 var(--body);
   -webkit-font-smoothing: antialiased;
   min-height: 100vh; display: flex; flex-direction: column;
@@ -57,11 +68,12 @@ code { font-family: var(--display); font-weight: 600; }
 .small { font-size: .9rem; }
 
 /* header */
-.top { position: sticky; top: 0; z-index: 10; padding-top: env(safe-area-inset-top, 0px); background: rgba(22,27,38,.94); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+.top { position: sticky; top: 0; z-index: 10; padding-top: env(safe-area-inset-top, 0px); background: rgba(7,13,24,.9); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
 .top .wrap { display: flex; align-items: center; gap: 12px; height: 60px; }
 .brand { display: flex; align-items: center; gap: 10px; font: 700 1.2rem var(--display); color: var(--text); text-decoration: none; margin-right: auto; }
-.brand-mark { width: 22px; height: 22px; background: var(--glow); box-shadow: inset 0 0 0 5px var(--glow), inset 0 0 0 11px var(--bg); }
+.brand-mark { width: 34px; height: 34px; border-radius: 6px; filter: drop-shadow(0 0 6px rgba(47,216,255,.45)); }
 .nav { display: flex; gap: 4px; align-items: center; }
+.nav a { white-space: nowrap; }
 .nav a:not(.btn) { color: var(--muted); text-decoration: none; padding: 8px 10px; border-radius: var(--r); font-family: var(--display); font-weight: 600; }
 .nav a:not(.btn):hover, .nav a[aria-current="page"] { color: var(--text); background: var(--surface); }
 
@@ -77,8 +89,8 @@ code { font-family: var(--display); font-weight: 600; }
 .btn:hover { filter: brightness(1.08); }
 .btn:active { box-shadow: inset 0 2px 0 rgba(0,0,0,.3); transform: translateY(1px); }
 .btn[disabled] { opacity: .45; cursor: not-allowed; filter: none; transform: none; }
-.btn.primary { --b: var(--glow); --c: var(--glow-ink); }
-.btn.danger { --b: var(--danger); --c: #2B0906; }
+.btn.primary { --b: var(--glow); --c: var(--glow-ink); box-shadow: inset 0 -3px 0 rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.25), 0 0 18px rgba(47,216,255,.28); }
+.btn.danger { --b: var(--danger); --c: #1E0600; }
 .btn.ghost { background: transparent; box-shadow: inset 0 0 0 1px var(--line); }
 .btn.small { min-height: 36px; padding: 0 12px; font-size: .92rem; }
 .btn.block { width: 100%; }
@@ -110,9 +122,9 @@ main:focus { outline: none; }
 /* status */
 .status { display: inline-flex; align-items: center; gap: 8px; font: 600 .95rem var(--display); }
 .dot { width: 10px; height: 10px; border-radius: 2px; background: var(--muted); flex: none; }
-.status.online { color: var(--online); } .status.online .dot { background: var(--online); box-shadow: 0 0 0 4px rgba(95,214,184,.18); }
+.status.online { color: var(--online); } .status.online .dot { background: var(--online); box-shadow: 0 0 0 4px rgba(99,219,106,.18); }
 .status.offline { color: var(--muted); }
-.status.never_started { color: var(--glow); } .status.never_started .dot { background: transparent; box-shadow: inset 0 0 0 2px var(--glow); }
+.status.never_started { color: var(--warn); } .status.never_started .dot { background: transparent; box-shadow: inset 0 0 0 2px var(--warn); }
 
 /* landing */
 .hero { display: grid; grid-template-columns: 1.1fr 1fr; gap: 56px; align-items: center; padding: 24px 0 72px; }
@@ -144,9 +156,9 @@ input[type=text], input[type=email], input[type=password], input[type=search], s
   width: 100%; min-height: 46px; padding: 10px 12px; border-radius: var(--r);
   background: var(--bg); color: var(--text); border: 1px solid var(--line); font: 1rem var(--body);
 }
-input:focus, select:focus { border-color: var(--glow); outline: none; box-shadow: 0 0 0 3px rgba(244,201,93,.25); }
+input:focus, select:focus { border-color: var(--glow); outline: none; box-shadow: 0 0 0 3px rgba(47,216,255,.3); }
 .slug-input { display: flex; align-items: stretch; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); overflow: hidden; }
-.slug-input:focus-within { border-color: var(--glow); box-shadow: 0 0 0 3px rgba(244,201,93,.25); }
+.slug-input:focus-within { border-color: var(--glow); box-shadow: 0 0 0 3px rgba(47,216,255,.3); }
 .slug-input input { border: 0; box-shadow: none !important; min-width: 0; }
 .slug-input span { display: flex; align-items: center; padding: 0 12px; color: var(--muted); background: var(--surface); white-space: nowrap; font: 600 1rem var(--display); }
 .addr-preview { margin-top: 10px; font-size: .95rem; color: var(--muted); }
@@ -155,8 +167,8 @@ input:focus, select:focus { border-color: var(--glow); outline: none; box-shadow
 .check input { width: 22px; height: 22px; margin: 2px 0 0; accent-color: var(--glow); flex: none; }
 .alert { padding: 12px 14px; border-radius: var(--r); margin-bottom: 18px; font-size: .95rem; }
 .alert.error { background: rgba(238,106,95,.12); color: #FFB3AC; box-shadow: inset 3px 0 0 var(--danger); }
-.alert.info { background: rgba(244,201,93,.1); box-shadow: inset 3px 0 0 var(--glow); }
-.alert.ok { background: rgba(95,214,184,.1); box-shadow: inset 3px 0 0 var(--online); }
+.alert.info { background: var(--glow-soft); box-shadow: inset 3px 0 0 var(--glow); }
+.alert.ok { background: rgba(99,219,106,.1); box-shadow: inset 3px 0 0 var(--online); }
 .ok-text { color: var(--online); } .bad-text { color: #FFB3AC; }
 .form-foot { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 18px; font-size: .95rem; }
 
@@ -182,7 +194,7 @@ input:focus, select:focus { border-color: var(--glow); outline: none; box-shadow
 .wizard-steps { display: flex; gap: 6px; list-style: none; padding: 0; margin: 0 0 28px; }
 .wizard-steps li { flex: 1; font: 600 .82rem var(--display); color: var(--muted); padding-top: 10px; border-top: 4px solid var(--line); }
 .wizard-steps li[aria-current="step"] { color: var(--text); border-color: var(--glow); }
-.wizard-steps li.done { border-color: rgba(244,201,93,.45); }
+.wizard-steps li.done { border-color: rgba(47,216,255,.45); }
 .choices { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .choice { position: relative; }
 .choice input { position: absolute; opacity: 0; }
@@ -217,13 +229,13 @@ details.panel summary { cursor: pointer; }
 .linkish { background: none; border: 0; padding: 0; color: var(--glow); font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .row-status { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 .expiry { font: 600 .85rem var(--display); color: var(--muted); }
-.expiry.warn { color: var(--glow); }
+.expiry.warn { color: var(--warn); }
 .expiry.expired { color: var(--danger); }
-.alert.warn { background: rgba(244,201,93,.12); box-shadow: inset 3px 0 0 var(--glow); }
+.alert.warn { background: rgba(242,181,68,.12); box-shadow: inset 3px 0 0 var(--warn); }
 .row-note.alert { margin: 6px 0 0; display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
 .renew-bar { display: flex; gap: 16px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin: 18px 0 0; padding: 14px 16px; border-radius: 8px; background: var(--surface); border: 1px solid var(--line); }
 .renew-bar p { margin: 0; }
-.renew-bar.warn { border-color: var(--glow); box-shadow: inset 4px 0 0 var(--glow); }
+.renew-bar.warn { border-color: var(--warn); box-shadow: inset 4px 0 0 var(--warn); }
 .renew-bar.expired { border-color: var(--danger); box-shadow: inset 4px 0 0 var(--danger); }
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 28px 0 28px; overflow-x: auto; }
 .tabs a { padding: 10px 14px; color: var(--muted); text-decoration: none; font: 600 1rem var(--display); border-bottom: 3px solid transparent; margin-bottom: -1px; white-space: nowrap; }
@@ -241,6 +253,71 @@ details.panel summary { cursor: pointer; }
 .search-row { display: flex; gap: 10px; margin: 8px 0 16px; }
 .search-row input { flex: 1; }
 @media (max-width: 600px) { .settings-grid { grid-template-columns: 1fr; } .row-status { align-items: flex-start; } }
+/* ---- wizard / settings layout ---- */
+.wiz-title { font-size: clamp(1.8rem, 4vw, 2.4rem); }
+.wiz-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 24px; align-items: start; }
+.wiz-layout > .card, .wiz-layout > div > .card { border-radius: 14px; }
+.card h2 { font-size: 1.45rem; }
+.card h2.panel { margin-top: 36px; padding-top: 28px; border-top: 1px solid var(--line); }
+#preview-slot { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 80px); }
+.steps-nav { list-style: none; display: flex; gap: 8px; padding: 0; margin: 0 0 22px; overflow-x: auto; scrollbar-width: none; }
+.steps-nav button { display: flex; align-items: center; gap: 10px; white-space: nowrap; padding: 8px 14px 8px 8px; border-radius: 10px;
+  background: var(--surface); border: 1px solid var(--line); color: var(--muted); font: 600 .95rem var(--display); cursor: pointer; }
+.steps-nav button[disabled] { cursor: default; opacity: .7; }
+.steps-nav .num { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 6px; background: var(--raised); color: var(--muted); font-size: .85rem; }
+.steps-nav button.done .num { background: var(--online); color: #04160a; }
+.steps-nav button[aria-current="step"] { color: var(--text); border-color: var(--glow); background: linear-gradient(180deg, var(--glow-soft), transparent); }
+.steps-nav button[aria-current="step"] .num { background: var(--glow); color: var(--glow-ink); }
+.preview { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; box-shadow: 0 0 40px rgba(47,216,255,.06); }
+.preview-title { font: 600 .78rem var(--display); letter-spacing: .08em; color: var(--muted); text-align: center; margin-bottom: 12px; }
+.mc-entry { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 10px; align-items: start; background: #0c0c0c; border: 2px solid #3a3a3a; padding: 6px; font-family: "Consolas", "Courier New", monospace; }
+.mc-entry img { width: 64px; height: 64px; image-rendering: pixelated; }
+.mc-name { color: #fff; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-motd { font-size: 14px; line-height: 1.3; overflow-wrap: anywhere; }
+.mc-count { color: #aaa; font-size: 13px; }
+.preview-rows { display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; margin: 16px 0 12px; font-size: .92rem; }
+.preview-rows dt { color: var(--muted); } .preview-rows dd { margin: 0; text-align: right; font-weight: 700; text-transform: capitalize; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: var(--raised); border: 1px solid var(--line); font: 600 .85rem var(--display); }
+.chip button { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 1rem; line-height: 1; padding: 0 2px; }
+.chip button:hover { color: var(--danger); }
+.chips { list-style: none; display: flex; flex-wrap: wrap; gap: 8px; padding: 0; margin: 0 0 10px; }
+.names .inline-form { max-width: 380px; }
+.seg { display: flex; flex-wrap: wrap; gap: 8px; }
+.seg button { min-height: 42px; padding: 0 14px; border-radius: 8px; background: var(--bg); border: 1px solid var(--line); color: var(--text); font: 600 .95rem var(--display); cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
+.seg button:hover { border-color: var(--muted); }
+.seg button[aria-checked="true"] { border-color: var(--glow); background: var(--glow-soft); box-shadow: inset 0 0 0 1px var(--glow); }
+.rec { font: 700 .68rem var(--display); letter-spacing: .02em; color: var(--glow-ink); background: var(--glow); padding: 2px 6px; border-radius: 4px; }
+.custom-ram { margin-top: 10px; display: flex; align-items: center; gap: 8px; } .custom-ram input { max-width: 110px; }
+.warn-text { color: var(--warn); }
+.icon-row { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+.icon-row .btn { margin: 0 8px 8px 0; }
+.icon-big { width: 96px; height: 96px; border-radius: 8px; image-rendering: pixelated; border: 1px solid var(--line); background: var(--bg); }
+.picks-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px; }
+.picks { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pick { position: relative; display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); cursor: pointer; }
+.pick input { position: absolute; opacity: 0; }
+.pick .box { flex: none; width: 22px; height: 22px; border-radius: 5px; border: 2px solid var(--line); margin-top: 1px; display: grid; place-items: center; }
+.pick input:checked ~ .box { background: var(--glow); border-color: var(--glow); }
+.pick input:checked ~ .box::after { content: "✓"; color: var(--glow-ink); font-weight: 700; font-size: .85rem; }
+.pick:has(input:checked) { border-color: var(--glow); background: var(--glow-soft); }
+.pick input:focus-visible ~ .box { outline: 3px solid var(--glow); outline-offset: 2px; }
+.pick b { font-family: var(--display); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.pick .meta { display: block; color: var(--muted); font-size: .88rem; }
+.pick.na { opacity: .5; cursor: not-allowed; }
+.server-top { display: flex; align-items: center; gap: 16px; }
+.server-top img { width: 56px; height: 56px; border-radius: 8px; image-rendering: pixelated; border: 1px solid var(--line); }
+.server-row .srv-icon { width: 44px; height: 44px; border-radius: 6px; image-rendering: pixelated; float: left; margin: 2px 14px 0 0; border: 1px solid var(--line); }
+.hero-art { position: relative; }
+.hero-logo { display: block; width: min(100%, 380px); margin: 0 auto -70px; border-radius: 24px; filter: drop-shadow(0 0 40px rgba(47,216,255,.28)); }
+.hero-art .plate { position: relative; transform: none; }
+.hero-art .addr { font-size: clamp(1.1rem, 2.2vw, 1.55rem); flex-basis: 100%; }
+.hero-art .addr-row .btn { display: none; }
+@media (max-width: 900px) { .wiz-layout { grid-template-columns: 1fr; } #preview-slot { position: static; order: -1; } .hero-logo { width: 260px; } }
+@media (max-width: 600px) {
+  .picks { grid-template-columns: 1fr; } .steps-nav button { font-size: .85rem; }
+  .top .wrap { gap: 8px; } .brand { font-size: 1.05rem; } .nav a:not(.btn) { padding: 8px 6px; }
+  #preview-slot .preview { padding: 10px; } #preview-slot .preview-title, #preview-slot .preview-rows, #preview-slot .chip { display: none; }
+}
 .danger-zone { border: 1px solid rgba(238,106,95,.5); border-radius: 10px; padding: 22px; }
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
 .inline-form { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -292,7 +369,7 @@ footer a { color: var(--muted); }
 <a class="sr-only skip" href="#app">Skip to content</a>
 <header class="top">
   <div class="wrap">
-    <a class="brand" href="#/"><span class="brand-mark" aria-hidden="true"></span>MZForge</a>
+    <a class="brand" href="#/"><img class="brand-mark" src="logo-64.png" alt="" width="34" height="34">MZForge</a>
     <nav class="nav" id="nav" aria-label="Main"></nav>
   </div>
 </header>
@@ -452,6 +529,12 @@ async function saveDownload(dl, progress = () => {}) {
   const enc = new TextEncoder();
   const entries = Object.entries(dl.files).map(([name, text]) => ({ name, data: enc.encode(text) }));
   entries.push({ name: "MZForgeLauncher.exe", data: launcherBytes });
+  // server-icon.png: the server's own icon, or the MZForge default.
+  try {
+    const icon = dl.icon_png ? Uint8Array.from(atob(dl.icon_png), c => c.charCodeAt(0))
+      : new Uint8Array(await (await fetch(DEFAULT_ICON)).arrayBuffer());
+    entries.push({ name: "server-icon.png", data: icon });
+  } catch { /* the launcher still works without an icon */ }
   // Mods/plugins: fetched via the API (Modrinth's CDN only) and checked
   // against Modrinth's SHA-512 before going in the ZIP.
   const failed = [];
@@ -545,7 +628,7 @@ function renderNav(route) {
   $("nav").innerHTML = `
     <a href="#/servers"${cur("servers")}>My servers</a>
     <a href="#/help" class="hide-sm"${cur("help")}>Help</a>
-    <a class="btn primary small" href="#/new">Create server</a>`;
+    <a class="btn primary small" href="#/new">Create<span class="hide-sm"> server</span></a>`;
 }
 
 // ---------- router ----------
@@ -607,9 +690,9 @@ function viewLanding() {
           ${has ? `<a class="btn ghost" href="#/servers">My servers</a>` : `<a class="btn ghost" href="#/help">Read how it works</a>`}
         </div>
       </div>
-      <div class="demo" aria-hidden="true" inert>
+      <div class="hero-art" aria-hidden="true" inert>
+        <img class="hero-logo" src="logo-480.webp" alt="" width="380" height="380">
         ${plateHTML(demo, { caption: "What your friends get", demo: true })}
-        <div class="demo-chat"><b>you:</b> server's up, paste this into Multiplayer</div>
       </div>
     </section>
 
@@ -698,6 +781,7 @@ async function viewMyServers() {
         return `
         <article class="server-row">
           <div>
+            <img class="srv-icon" src="${esc(API + sv.icon_url)}" alt="" width="44" height="44" loading="lazy" onerror="this.src='${DEFAULT_ICON}'">
             <h2><a href="#/servers/${esc(sv.server_id)}">${esc(sv.name)}</a></h2>
             <div class="meta">${esc(loaderName(sv.loader))} ${esc(sv.mc_version)}, created ${esc(dateStr(sv.created_at))}</div>
           </div>
@@ -739,98 +823,563 @@ function wireAdd() {
   };
 }
 
+// ---------- shared server-config building blocks ----------
+// Used by both the create wizard and the server's Settings/Mods tabs, so
+// creating and editing always offer the same options.
+
+const DEFAULT_ICON = "default-icon.png";
+const MODRINTH = "https://api.modrinth.com/v2";
+const MOD_LOADERS = { fabric: ["fabric"], paper: ["paper", "spigot", "bukkit"] };
+const addonWord = (loader, plural = true) => loader === "fabric" ? (plural ? "mods" : "mod") : (plural ? "plugins" : "plugin");
+
+// Popular, server-side, and known to work through Minekube's tunnel.
+// (No Geyser or voice chat: they need UDP ports the tunnel doesn't carry.)
+const POPULAR = {
+  paper: [
+    { slug: "viaversion", title: "ViaVersion", desc: "Lets players on newer Minecraft versions join.", rec: true },
+    { slug: "essentialsx", title: "EssentialsX", desc: "/home, /tpa, /warp, /kit and more.", rec: true },
+    { slug: "coreprotect", title: "CoreProtect", desc: "Logs blocks so you can roll back griefing.", rec: true },
+    { slug: "luckperms", title: "LuckPerms", desc: "Ranks and permissions." },
+    { slug: "worldedit", title: "WorldEdit", desc: "Build and edit huge areas fast." },
+    { slug: "chunky", title: "Chunky", desc: "Pre-generates the world to cut lag." },
+    { slug: "spark", title: "spark", desc: "Finds what's causing lag." },
+    { slug: "multiverse-core", title: "Multiverse-Core", desc: "Several worlds on one server." },
+  ],
+  fabric: [
+    { slug: "fabric-api", title: "Fabric API", desc: "Needed by almost every Fabric mod.", rec: true },
+    { slug: "lithium", title: "Lithium", desc: "Big performance boost, same gameplay.", rec: true },
+    { slug: "ferrite-core", title: "FerriteCore", desc: "Cuts memory use.", rec: true },
+    { slug: "krypton", title: "Krypton", desc: "Lighter, faster networking." },
+    { slug: "chunky", title: "Chunky", desc: "Pre-generates the world to cut lag." },
+    { slug: "spark", title: "spark", desc: "Finds what's causing lag." },
+    { slug: "no-chat-reports", title: "No Chat Reports", desc: "Turns off chat reporting." },
+    { slug: "ledger", title: "Ledger", desc: "Logs blocks so you can roll back griefing." },
+  ],
+};
+
+// ----- recommendations -----
+// Rough capacity per GB of heap, by server software. Deliberately
+// conservative: exploring players and farms use more than idle ones.
+const PLAYERS_PER_GB = { vanilla: 5, paper: 8, fabric: 6 };
+const RAM_STEPS = [2048, 3072, 4096, 6144, 8192, 10240, 12288];
+function recommendRam(loader, players, addons) {
+  const gb = 1.5 + players / (PLAYERS_PER_GB[loader] || 5) + addons * 0.08;
+  return RAM_STEPS.find(s => s >= gb * 1024) || 12288;
+}
+function comfortablePlayers(loader, ramMb, addons) {
+  return Math.max(2, Math.floor((ramMb / 1024 - 1.5 - addons * 0.08) * (PLAYERS_PER_GB[loader] || 5)));
+}
+const gbLabel = mb => `${+(mb / 1024).toFixed(1)} GB`;
+
+// ----- icon: any image -> 64x64 PNG (what Minecraft requires) -----
+function resizeIcon(file) {
+  return new Promise((resolve, reject) => {
+    if (!file || !/^image\//.test(file.type)) return reject(new Error("Pick an image file (PNG, JPG, WebP, GIF)."));
+    if (file.size > 15 * 1024 * 1024) return reject(new Error("That image is too big. Pick one under 15 MB."));
+    // Read as a data: URL (the page's security policy allows data: images,
+    // not blob: ones).
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Couldn't read that image."));
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const c = document.createElement("canvas"); c.width = c.height = 64;
+        const ctx = c.getContext("2d"); ctx.imageSmoothingQuality = "high";
+        const side = Math.min(img.width, img.height); // centre square crop
+        ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, 64, 64);
+        resolve(c.toDataURL("image/png").split(",")[1]);
+      };
+      img.onerror = () => reject(new Error("Couldn't read that image. Try a PNG or JPG."));
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+const iconSrc = cfg => cfg.iconPNG ? `data:image/png;base64,${cfg.iconPNG}` : (cfg.icon_url && cfg.has_icon ? API + cfg.icon_url : DEFAULT_ICON);
+
+// ----- MOTD colours (preview) -----
+const MC_COLORS = { 0: "#000", 1: "#00a", 2: "#0a0", 3: "#0aa", 4: "#a00", 5: "#a0a", 6: "#fa0", 7: "#aaa", 8: "#555", 9: "#55f", a: "#5f5", b: "#5ff", c: "#f55", d: "#f5f", e: "#ff5", f: "#fff" };
+function motdPreviewHTML(text) {
+  let out = "", style = { color: "#aaa" };
+  const parts = String(text).split(/[&§]([0-9a-fk-or])/i);
+  for (let i = 0; i < parts.length; i++) {
+    if (i % 2 === 1) {
+      const c = parts[i].toLowerCase();
+      if (MC_COLORS[c]) style = { color: MC_COLORS[c] };
+      else if (c === "l") style.bold = true;
+      else if (c === "o") style.italic = true;
+      else if (c === "n") style.underline = true;
+      else if (c === "m") style.strike = true;
+      else if (c === "r") style = { color: "#aaa" };
+      continue;
+    }
+    if (!parts[i]) continue;
+    const css = `color:${style.color};${style.bold ? "font-weight:700;" : ""}${style.italic ? "font-style:italic;" : ""}` +
+      `${style.underline || style.strike ? `text-decoration:${style.underline ? "underline " : ""}${style.strike ? "line-through" : ""};` : ""}`;
+    out += `<span style="${css}">${esc(parts[i])}</span>`;
+  }
+  return out;
+}
+
+// ----- live preview card (Minecraft server-list look) -----
+function previewCardHTML(cfg) {
+  const n = cfg.addons?.length || 0;
+  const modeLabel = { survival: "Survival", creative: "Creative", adventure: "Adventure" }[cfg.gamemode] || "";
+  return `
+  <aside class="preview" aria-label="Live preview">
+    <div class="preview-title">Your server, live preview</div>
+    <div class="mc-entry">
+      <img src="${esc(iconSrc(cfg))}" alt="" width="64" height="64">
+      <div><div class="mc-name">${esc(cfg.name || "My Server")}</div>
+        <div class="mc-motd">${motdPreviewHTML(cfg.motd || cfg.name || "A Minecraft Server")}</div></div>
+      <div class="mc-count">0/${esc(cfg.max_players)}</div>
+    </div>
+    <dl class="preview-rows">
+      <dt>Software</dt><dd>${esc(loaderName(cfg.loader))}</dd>
+      <dt>Version</dt><dd>${esc(cfg.version || cfg.mc_version || "")}</dd>
+      <dt>Memory</dt><dd>${esc(gbLabel(cfg.ram_mb))}</dd>
+      <dt>Mode</dt><dd>${esc(modeLabel)}${cfg.difficulty ? `, ${esc(cfg.difficulty)}` : ""}</dd>
+      <dt>Who can join</dt><dd>${cfg.whitelist ? "Whitelist" : "Anyone"}${cfg.online_mode ? "" : ", cracked"}</dd>
+    </dl>
+    ${MOD_LOADERS[cfg.loader] ? `<span class="chip">${n} ${addonWord(cfg.loader, n !== 1)}</span>` : ""}
+  </aside>`;
+}
+
+// ----- segmented choice buttons -----
+function segHTML(name, options, current) {
+  return `<div class="seg" role="radiogroup" data-seg="${name}">${options.map(([v, label, extra]) =>
+    `<button type="button" role="radio" aria-checked="${String(v) === String(current)}" data-v="${esc(v)}">${label}${extra || ""}</button>`).join("")}</div>`;
+}
+function wireSeg(root, name, onPick) {
+  const g = root.querySelector(`[data-seg="${name}"]`);
+  g.onclick = e => {
+    const b = e.target.closest("button[data-v]"); if (!b) return;
+    g.querySelectorAll("button").forEach(x => x.setAttribute("aria-checked", String(x === b)));
+    onPick(b.dataset.v);
+  };
+}
+
+// ----- Basics: memory, players, mode, difficulty, access -----
+function basicsHTML(cfg) {
+  const addons = cfg.addons?.length || 0;
+  const rec = recommendRam(cfg.loader, cfg.max_players, addons);
+  const std = [2048, 3072, 4096, 6144, 8192];
+  const custom = !std.includes(cfg.ram_mb);
+  const recBadge = v => v === rec ? `<span class="rec">Recommended</span>` : "";
+  return `
+    <div class="field"><span class="label">Memory (RAM)</span>
+      ${segHTML("ram", [...std.map(v => [v, gbLabel(v), recBadge(v)]), ["custom", custom ? gbLabel(cfg.ram_mb) : "Custom…", ""]], custom ? "custom" : cfg.ram_mb)}
+      <div class="custom-ram" ${custom ? "" : "hidden"}><label class="sr-only" for="b-ramc">Custom memory in GB</label>
+        <input id="b-ramc" type="text" inputmode="decimal" value="${esc(+(cfg.ram_mb / 1024).toFixed(2))}"> <span class="muted">GB</span></div>
+      <div class="hint" id="b-ramhint">${ramHint(cfg)}</div></div>
+    <div class="settings-grid">
+      <div class="field"><label for="b-max">Max players</label>
+        <input id="b-max" type="text" inputmode="numeric" value="${esc(cfg.max_players)}">
+        <div class="hint" id="b-maxhint">${playersHint(cfg)}</div></div>
+      <div class="field"><span class="label">PvP</span>
+        ${segHTML("pvp", [["true", "On"], ["false", "Off"]], String(!!cfg.pvp))}
+        <div class="hint">Whether players can hurt each other.</div></div>
+    </div>
+    <div class="field"><span class="label">Game mode</span>
+      ${segHTML("gamemode", [["survival", "Survival"], ["creative", "Creative"], ["adventure", "Adventure"]], cfg.gamemode)}</div>
+    <div class="field"><span class="label">Difficulty</span>
+      ${segHTML("difficulty", [["peaceful", "Peaceful"], ["easy", "Easy"], ["normal", "Normal"], ["hard", "Hard"]], cfg.difficulty)}</div>
+    <div class="settings-grid">
+      <div class="field"><span class="label">Who can join</span>
+        ${segHTML("whitelist", [["false", "Anyone"], ["true", "Whitelist only"]], String(!!cfg.whitelist))}
+        <div class="names" id="b-wl" ${cfg.whitelist ? "" : "hidden"}>${namesHTML("wl", cfg.whitelist_players, "Add a player")}</div></div>
+      <div class="field"><span class="label">Account type</span>
+        ${segHTML("online", [["true", "Official accounts"], ["false", "Cracked (offline)"]], String(!!cfg.online_mode))}
+        <div class="hint">${cfg.online_mode ? "Only players with a real Minecraft account can join. Recommended." : "Lets in players without a paid account. Anyone can join as any name, including yours, so use it only with people you trust and turn on the whitelist."}</div></div>
+    </div>
+    <div class="field"><span class="label">Admins (op)</span>
+      <div class="names" id="b-ops">${namesHTML("ops", cfg.ops, "Your Minecraft username")}</div>
+      <div class="hint">Admins can use commands like /gamemode and /whitelist in-game. Add yourself so you can manage your server.</div></div>
+    <details class="field"><summary class="label" style="cursor:pointer">Advanced</summary>
+      <div class="field" style="margin-top:10px"><label for="b-port">Local port</label>
+        <input id="b-port" type="text" inputmode="numeric" value="${esc(cfg.port)}" style="max-width:180px">
+        <div class="hint">The port Minecraft uses on your own PC. Leave it at 25565 unless another server on this PC already uses it. Friends never need it.</div></div>
+    </details>`;
+}
+function ramHint(cfg) {
+  const addons = cfg.addons?.length || 0;
+  const rec = recommendRam(cfg.loader, cfg.max_players, addons);
+  const dev = navigator.deviceMemory ? ` This device reports at least ${navigator.deviceMemory} GB.` : "";
+  const extra = addons ? `, ${addons} ${addonWord(cfg.loader, addons !== 1)}` : "";
+  return `Recommended: ${gbLabel(rec)} for ${esc(loaderName(cfg.loader))} with ${esc(cfg.max_players)} players${esc(extra)}. Keep it under about 60% of your PC's total memory.${dev}`;
+}
+function playersHint(cfg) {
+  const ok = comfortablePlayers(cfg.loader, cfg.ram_mb, cfg.addons?.length || 0);
+  return cfg.max_players > ok
+    ? `<span class="warn-text">${gbLabel(cfg.ram_mb)} comfortably handles about ${ok} players. Consider ${gbLabel(recommendRam(cfg.loader, cfg.max_players, cfg.addons?.length || 0))}.</span>`
+    : `${gbLabel(cfg.ram_mb)} comfortably handles about ${ok} players on ${esc(loaderName(cfg.loader))}.`;
+}
+function namesHTML(key, names, placeholder) {
+  return `<ul class="chips" data-names="${key}">${(names || []).map(n => `<li class="chip">${esc(n)} <button type="button" aria-label="Remove ${esc(n)}" data-rm="${esc(n)}">×</button></li>`).join("")}</ul>
+    <div class="inline-form" data-addname="${key}"><label class="sr-only" for="n-${key}">${placeholder}</label>
+      <input id="n-${key}" type="text" maxlength="16" placeholder="${placeholder}" autocomplete="off" spellcheck="false" autocapitalize="off"><button type="button" class="btn small">Add</button></div>
+    <div class="hint" data-namemsg="${key}" aria-live="polite"></div>`;
+}
+
+// Wires the Basics form. onChange() redraws previews; values land in cfg.
+function wireBasics(root, cfg, onChange) {
+  const refreshHints = () => {
+    root.querySelector("#b-ramhint").innerHTML = ramHint(cfg);
+    root.querySelector("#b-maxhint").innerHTML = playersHint(cfg);
+    const rec = recommendRam(cfg.loader, cfg.max_players, cfg.addons?.length || 0);
+    root.querySelectorAll('[data-seg="ram"] button').forEach(b => {
+      b.querySelector(".rec")?.remove();
+      if (+b.dataset.v === rec) b.insertAdjacentHTML("beforeend", `<span class="rec">Recommended</span>`);
+    });
+    onChange();
+  };
+  wireSeg(root, "ram", v => {
+    const box = root.querySelector(".custom-ram");
+    cfg.ramTouched = true;
+    if (v === "custom") { box.hidden = false; root.querySelector("#b-ramc").focus(); return; }
+    box.hidden = true; cfg.ram_mb = +v; refreshHints();
+  });
+  root.querySelector("#b-ramc").oninput = e => {
+    const gb = parseFloat(e.target.value);
+    if (gb >= 1 && gb <= 32) { cfg.ram_mb = Math.round(gb * 4) * 256; cfg.ramTouched = true; refreshHints(); }
+  };
+  root.querySelector("#b-max").oninput = e => {
+    const n = parseInt(e.target.value, 10);
+    if (n >= 1 && n <= 500) {
+      cfg.max_players = n;
+      // Until someone picks memory themselves, memory follows the recommendation.
+      if (!cfg.ramTouched) {
+        cfg.ram_mb = recommendRam(cfg.loader, n, cfg.addons?.length || 0);
+        root.querySelectorAll('[data-seg="ram"] button').forEach(b => b.setAttribute("aria-checked", String(+b.dataset.v === cfg.ram_mb)));
+      }
+      refreshHints();
+    }
+  };
+  wireSeg(root, "pvp", v => { cfg.pvp = v === "true"; onChange(); });
+  wireSeg(root, "gamemode", v => { cfg.gamemode = v; onChange(); });
+  wireSeg(root, "difficulty", v => { cfg.difficulty = v; onChange(); });
+  wireSeg(root, "whitelist", v => { cfg.whitelist = v === "true"; root.querySelector("#b-wl").hidden = !cfg.whitelist; onChange(); });
+  wireSeg(root, "online", v => {
+    cfg.online_mode = v === "true";
+    root.querySelector('[data-seg="online"]').nextElementSibling.textContent = cfg.online_mode
+      ? "Only players with a real Minecraft account can join. Recommended."
+      : "Lets in players without a paid account. Anyone can join as any name, including yours, so use it only with people you trust and turn on the whitelist.";
+    onChange();
+  });
+  root.querySelector("#b-port").oninput = e => { const n = parseInt(e.target.value, 10); if (n >= 1024 && n <= 65535) cfg.port = n; };
+  for (const [key, field] of [["wl", "whitelist_players"], ["ops", "ops"]]) {
+    const list = root.querySelector(`[data-names="${key}"]`), form = root.querySelector(`[data-addname="${key}"]`);
+    const msg = root.querySelector(`[data-namemsg="${key}"]`);
+    const draw = () => { list.innerHTML = cfg[field].map(n => `<li class="chip">${esc(n)} <button type="button" aria-label="Remove ${esc(n)}" data-rm="${esc(n)}">×</button></li>`).join(""); onChange(); };
+    list.onclick = e => { const b = e.target.closest("[data-rm]"); if (b) { cfg[field] = cfg[field].filter(n => n !== b.dataset.rm); draw(); } };
+    // Not a <form>: these sit inside the wizard/settings form, and nested
+    // forms are invalid (the browser would submit the outer one).
+    const input = form.querySelector("input");
+    input.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); addName(); } };
+    form.querySelector("button").onclick = () => addName();
+    const addName = async () => {
+      const name = input.value.trim();
+      if (!/^[A-Za-z0-9_]{3,16}$/.test(name)) { msg.innerHTML = `<span class="bad-text">Minecraft names are 3-16 letters, numbers or _.</span>`; return; }
+      if (cfg[field].some(n => n.toLowerCase() === name.toLowerCase())) { input.value = ""; return; }
+      let final = name;
+      if (cfg.online_mode) { // official accounts: check it exists, get the right capitalisation
+        msg.textContent = "Checking…";
+        try {
+          const r = await api("GET", `/meta/player?name=${encodeURIComponent(name)}`);
+          if (!r.found) { msg.innerHTML = `<span class="bad-text">${esc(sentence(r.reason))}</span>`; return; }
+          final = r.name;
+        } catch (err) { msg.innerHTML = `<span class="bad-text">${esc(err.message)}</span>`; return; }
+      }
+      msg.textContent = ""; input.value = ""; cfg[field].push(final); draw();
+    };
+  }
+}
+
+// ----- Appearance: icon + description -----
+function appearanceHTML(cfg) {
+  return `
+    <div class="field"><span class="label">Server icon</span>
+      <div class="icon-row">
+        <img class="icon-big" id="a-icon" src="${esc(iconSrc(cfg))}" alt="Server icon" width="96" height="96">
+        <div>
+          <label class="btn" for="a-file">Upload an image</label>
+          <input id="a-file" type="file" accept="image/*" class="sr-only">
+          <button type="button" class="btn ghost" id="a-reset" ${cfg.iconPNG || cfg.has_icon ? "" : "hidden"}>Use MZForge icon</button>
+          <div class="hint">Any picture works: it's cropped to a square and shrunk to 64×64, the size Minecraft shows in the server list. Without one, your server uses the MZForge icon.</div>
+        </div>
+      </div></div>
+    <div class="field"><label for="a-name">Server name</label>
+      <input id="a-name" type="text" maxlength="48" value="${esc(cfg.name)}">
+      <div class="hint">Shown on MZForge. The join address never changes.</div></div>
+    <div class="field"><label for="a-motd">Description (MOTD)</label>
+      <input id="a-motd" type="text" maxlength="120" value="${esc(cfg.motd)}" placeholder="Come and build with us">
+      <div class="hint">The line under your server's name in Minecraft's Multiplayer list. Colours: &amp;6gold, &amp;bcyan, &amp;alime, &amp;lbold, &amp;r reset.</div></div>`;
+}
+// onIcon(base64|null) lets the edit page upload straight away.
+function wireAppearance(root, cfg, onChange, onIcon) {
+  const img = root.querySelector("#a-icon"), reset = root.querySelector("#a-reset");
+  root.querySelector("#a-file").onchange = async e => {
+    const file = e.target.files[0]; e.target.value = "";
+    try {
+      const png = await resizeIcon(file);
+      if (onIcon) await onIcon(png);
+      cfg.iconPNG = png; img.src = iconSrc(cfg); reset.hidden = false; onChange();
+    } catch (err) { toast(err.message); }
+  };
+  reset.onclick = async () => {
+    try {
+      if (onIcon) await onIcon(null);
+      cfg.iconPNG = ""; cfg.has_icon = false; img.src = DEFAULT_ICON; reset.hidden = true; onChange();
+    } catch (err) { toast(err.message); }
+  };
+  root.querySelector("#a-name").oninput = e => { cfg.name = e.target.value; onChange(); };
+  root.querySelector("#a-motd").oninput = e => { cfg.motd = e.target.value; onChange(); };
+}
+
+// ----- Add-on picker (popular picks + Modrinth search) -----
+// ops: { has(projectId), add(projectId, info) -> Promise, remove(projectId) -> Promise }
+async function compatibleVersion(loader, version, projectId) {
+  const q = `loaders=${encodeURIComponent(JSON.stringify(MOD_LOADERS[loader]))}&game_versions=${encodeURIComponent(JSON.stringify([version]))}`;
+  const res = await fetch(`${MODRINTH}/project/${encodeURIComponent(projectId)}/version?${q}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error("Couldn't reach Modrinth. Try again in a moment.");
+  const versions = await res.json();
+  return versions[0] || null;
+}
+function pickerHTML(loader, version) {
+  const what = addonWord(loader);
+  return `
+    <div class="picks-head"><span class="label">Popular picks</span>
+      <button type="button" class="btn small ghost" id="p-recall">Add all recommended</button></div>
+    <div class="picks" id="p-picks">${POPULAR[loader].map(p => `
+      <label class="pick" data-slug="${p.slug}">
+        <input type="checkbox" data-pick="${p.slug}">
+        <span class="box" aria-hidden="true"></span>
+        <span><b>${esc(p.title)}${p.rec ? ` <span class="rec">Recommended</span>` : ""}</b><span class="meta">${esc(p.desc)}</span></span>
+      </label>`).join("")}</div>
+    <div class="field" style="margin-top:22px"><label for="p-q">Search Modrinth</label>
+      <div class="search-row" id="p-search"><input id="p-q" type="search" placeholder="Try: tpa, economy, shops, claims, backups…" autocomplete="off"><button type="button" class="btn">Search</button></div>
+      <div class="hint">Only ${what} for ${esc(loaderName(loader))} ${esc(version)}${loader === "fabric" ? " that run on a server" : ""} are shown.</div></div>
+    <ul class="mod-list" id="p-results" aria-live="polite"></ul>`;
+}
+function wirePicker(root, loader, version, ops) {
+  const picks = root.querySelector("#p-picks");
+  // Resolve popular picks to real Modrinth projects; grey out ones with no
+  // build for this Minecraft version.
+  const ids = {};
+  const sync = () => picks.querySelectorAll("[data-pick]").forEach(cb => { const id = ids[cb.dataset.pick]; cb.checked = !!id && ops.has(id); });
+  POPULAR[loader].forEach(async p => {
+    const label = picks.querySelector(`[data-slug="${p.slug}"]`);
+    try {
+      const v = await compatibleVersion(loader, version, p.slug);
+      if (!v) { label.classList.add("na"); label.querySelector("input").disabled = true; label.querySelector(".meta").textContent = `Not available for ${version} yet.`; return; }
+      ids[p.slug] = v.project_id; label.dataset.version = v.id; sync();
+    } catch { /* offline: leave clickable; adding will explain */ }
+  });
+  picks.onchange = async e => {
+    const cb = e.target.closest("[data-pick]"); if (!cb) return;
+    const p = POPULAR[loader].find(x => x.slug === cb.dataset.pick);
+    cb.disabled = true;
+    try {
+      if (cb.checked) { const id = await ops.add(ids[p.slug] || p.slug, { title: p.title }); if (id) ids[p.slug] = id; }
+      else await ops.remove(ids[p.slug] || p.slug);
+    } catch (err) { toast(err.message); cb.checked = !cb.checked; }
+    cb.disabled = false; sync();
+  };
+  root.querySelector("#p-recall").onclick = async e => {
+    const b = e.currentTarget; b.disabled = true;
+    for (const p of POPULAR[loader].filter(x => x.rec)) {
+      const cb = picks.querySelector(`[data-pick="${p.slug}"]`);
+      if (cb.disabled || cb.checked) continue;
+      try { const id = await ops.add(ids[p.slug] || p.slug, { title: p.title }); if (id) ids[p.slug] = id; } catch (err) { toast(err.message); }
+    }
+    b.disabled = false; sync();
+  };
+
+  let lastQ = null;
+  const results = root.querySelector("#p-results");
+  const search = async q => {
+    lastQ = q;
+    const f = loader === "fabric"
+      ? [["categories:fabric"], [`versions:${version}`], ["project_type:mod"], ["server_side:required", "server_side:optional"]]
+      : [["categories:paper", "categories:spigot", "categories:bukkit"], [`versions:${version}`]];
+    results.innerHTML = `<li class="muted">Searching…</li>`;
+    let data;
+    try {
+      const res = await fetch(`${MODRINTH}/search?limit=15&index=relevance&query=${encodeURIComponent(q)}&facets=${encodeURIComponent(JSON.stringify(f))}`);
+      if (!res.ok) throw 0; data = await res.json();
+    } catch { if (lastQ === q) results.innerHTML = `<li class="muted">Couldn't reach Modrinth. Try again in a moment.</li>`; return; }
+    if (lastQ !== q) return;
+    const hits = data.hits || [];
+    results.innerHTML = hits.length ? hits.map(h => modRowHTML(
+      { title: h.title, icon_url: String(h.icon_url || "").startsWith("https://cdn.modrinth.com/") ? h.icon_url : "", sub: `${h.description} (${Number(h.downloads).toLocaleString()} downloads)` },
+      ops.has(h.project_id) ? `<span class="muted small">Added</span>` : `<button type="button" class="btn small primary" data-add="${esc(h.project_id)}" data-title="${esc(h.title)}" data-icon="${esc(h.icon_url || "")}">Add</button>`
+    )).join("") : `<li class="muted">Nothing found for ${esc(loaderName(loader))} ${esc(version)}.</li>`;
+  };
+  let t;
+  root.querySelector("#p-q").oninput = e => { clearTimeout(t); const q = e.target.value.trim(); if (q.length >= 2) t = setTimeout(() => search(q), 400); };
+  root.querySelector("#p-search button").onclick = () => search(root.querySelector("#p-q").value.trim());
+  root.querySelector("#p-q").onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); search(e.target.value.trim()); } };
+  results.onclick = async e => {
+    const b = e.target.closest("[data-add]"); if (!b) return;
+    b.disabled = true; b.textContent = "Adding…";
+    try {
+      await ops.add(b.dataset.add, { title: b.dataset.title, icon_url: b.dataset.icon });
+      b.replaceWith(Object.assign(document.createElement("span"), { className: "muted small", textContent: "Added" }));
+      sync();
+    } catch (err) { toast(err.message); b.disabled = false; b.textContent = "Add"; }
+  };
+  return { refresh: sync };
+}
+function modRowHTML(m, action) {
+  const icon = m.icon_url ? `<img src="${esc(m.icon_url)}" alt="" loading="lazy" onerror="this.outerHTML='<span class=noicon></span>'">` : `<span class="noicon"></span>`;
+  return `<li class="mod">${icon}<div><b>${esc(m.title)}</b><span class="meta">${esc(m.sub)}</span></div>${action}</li>`;
+}
+// The settings fields both the wizard and editing send to the API.
+function settingsPayload(cfg) {
+  return {
+    name: cfg.name, motd: cfg.motd, max_players: cfg.max_players, pvp: !!cfg.pvp, gamemode: cfg.gamemode,
+    difficulty: cfg.difficulty, ram_mb: cfg.ram_mb, port: cfg.port, whitelist: !!cfg.whitelist,
+    whitelist_players: cfg.whitelist_players, ops: cfg.ops, online_mode: !!cfg.online_mode,
+  };
+}
+
 // ---------- create wizard ----------
+// Adds a Modrinth project (newest build for this server) plus its required
+// dependencies. Returns the project id added.
+async function addToServer(sv, key, projectId, depth = 0) {
+  const v = await compatibleVersion(sv.loader, sv.mc_version, projectId);
+  if (!v) { if (depth === 0) throw new Error(`No version of that for ${loaderName(sv.loader)} ${sv.mc_version} yet.`); return null; }
+  const r = await api("POST", `/servers/${sv.server_id}/mods`, { version_id: v.id }, key);
+  sv.mods = r.mods;
+  if (depth < 3) for (const dep of r.missing_dependencies) { try { await addToServer(sv, key, dep, depth + 1); } catch {} }
+  return v.project_id;
+}
+
 async function viewCreate() {
   setTitle("Create a server");
-  const w = { step: 0, name: "", slug: "", slugEdited: false, slugOK: false, loader: "paper", version: "", versions: [], eula: null, accepted: false };
-  $app.innerHTML = `<div class="wrap narrow"><p class="muted">Loading…</p></div>`;
+  const cfg = {
+    step: 0, name: "", slug: "", slugEdited: false, slugOK: false, loader: "paper", version: "", versions: [], eula: null, accepted: false,
+    max_players: 10, ram_mb: 0, ramTouched: false, port: 25565, pvp: true, gamemode: "survival", difficulty: "normal",
+    whitelist: false, whitelist_players: [], ops: [], online_mode: true, motd: "", iconPNG: "", addons: [],
+  };
+  cfg.ram_mb = recommendRam(cfg.loader, cfg.max_players, 0);
+  $app.innerHTML = `<div class="wrap"><p class="muted">Loading…</p></div>`;
   try {
     const [v, e] = await Promise.all([api("GET", "/meta/versions"), api("GET", "/meta/eula")]);
-    w.versions = v.versions; w.version = v.versions[0]; w.eula = e;
+    cfg.versions = v.versions; cfg.version = v.versions[0]; cfg.eula = e;
   } catch (err) { $app.innerHTML = `<div class="wrap narrow"><div class="alert error">${esc(err.message)}</div></div>`; return; }
 
-  const STEPS = ["Name", "Software", "EULA", "Create"];
+  const steps = () => ["Server type", "Basics", "Appearance", cfg.loader === "fabric" ? "Mods" : cfg.loader === "paper" ? "Plugins" : "Add-ons", "Create"];
   let slugTimer, slugSeq = 0;
-  function previewHTML(v) {
-    if (!v) return `Your friends will join at <code>mzf-<span class="muted">yourname</span>.play.minekube.net</code>`;
-    return `Your friends will join at <code>${addrHTML("mzf-" + v + ".play.minekube.net")}</code>`;
-  }
-
-  const frame = inner => `
-    <div class="wrap narrow">
-      <h1>Create a server</h1>
-      <ol class="wizard-steps">${STEPS.map((s, i) => `<li data-n="${i + 1}" data-label="${i + 1}. ${s}" class="${i < w.step ? "done" : ""}" ${i === w.step ? 'aria-current="step"' : ""}>${i + 1}. ${s}</li>`).join("")}</ol>
-      <form class="card" id="f" novalidate><div id="err"></div>${inner}</form>
-    </div>`;
+  const previewAddr = v => v ? `Your friends will join at <code>${addrHTML("mzf-" + v + ".play.minekube.net")}</code>` : `Your friends will join at <code>mzf-<span class="muted">yourname</span>.play.minekube.net</code>`;
+  const followRam = () => { if (!cfg.ramTouched) cfg.ram_mb = recommendRam(cfg.loader, cfg.max_players, cfg.addons.length); };
+  const updatePreview = () => { const p = $("preview-slot"); if (p) p.innerHTML = previewCardHTML(cfg); };
 
   function draw() {
-    if (w.step === 0) {
-      $app.innerHTML = frame(`
-        <div class="field"><label for="name">Server name</label>
-          <input id="name" type="text" maxlength="48" autocomplete="off" value="${esc(w.name)}" placeholder="Friday Night SMP">
-          <div class="hint">Shown on your server page. You can rename it any time.</div></div>
-        <div class="field"><label for="slug">Address name</label>
-          <div class="slug-input"><span>mzf-</span><input id="slug" type="text" maxlength="32" autocomplete="off" spellcheck="false" autocapitalize="off" value="${esc(w.slug)}" aria-describedby="slug-preview slug-msg slug-hint"></div>
-          <div class="addr-preview" id="slug-preview" aria-live="polite">${previewHTML(w.slug)}</div>
-          <div class="hint" id="slug-msg" aria-live="polite"></div>
-          <div class="hint" id="slug-hint">Lowercase letters, numbers, and hyphens, 3 to 32 characters. This is permanent: it can't be changed, and a deleted server's name can't be used again.</div></div>
-        <div class="wizard-nav"><a class="btn ghost" href="#/">Cancel</a><button class="btn primary" id="next">Next</button></div>`);
-      const name = $("name"), slug = $("slug");
-      name.focus();
-      name.oninput = () => { w.name = name.value; if (!w.slugEdited) { slug.value = slugify(name.value); checkSlug(slug.value); } };
-      slug.oninput = () => { w.slugEdited = true; const v = slug.value.toLowerCase().replace(/[^a-z0-9-]/g, ""); if (v !== slug.value) slug.value = v; checkSlug(v); };
-      if (w.slug) checkSlug(w.slug, true);
-    } else if (w.step === 1) {
-      $app.innerHTML = frame(`
-        <fieldset style="border:0;padding:0;margin:0 0 20px"><legend class="label">Server software</legend>
-          <div class="choices">${Object.entries(LOADERS).map(([k, l]) => `
-            <div class="choice"><input type="radio" name="loader" id="l-${k}" value="${k}" ${w.loader === k ? "checked" : ""}>
-            <label for="l-${k}"><b>${l.name}</b><span>${l.blurb}</span></label></div>`).join("")}</div>
-          <div class="hint">Forge support is coming later.</div>
-        </fieldset>
-        <div class="field"><label for="version">Minecraft version</label>
-          <select id="version">${w.versions.map(v => `<option ${v === w.version ? "selected" : ""}>${esc(v)}</option>`).join("")}</select>
-          <div class="hint">Players join with this same version. Paper and Fabric builds can arrive a few days after a new Minecraft release.</div></div>
-        <div class="wizard-nav"><button type="button" class="btn ghost" id="back">Back</button><button class="btn primary" id="next">Next</button></div>`);
-      $app.querySelectorAll("[name=loader]").forEach(r => r.onchange = () => w.loader = r.value);
-      $("version").onchange = e => w.version = e.target.value;
-    } else if (w.step === 2) {
-      const text = w.eula.text;
-      $app.innerHTML = frame(`
-        <h2>Minecraft End User License Agreement</h2>
-        <p>Every Minecraft server has to accept Mojang's EULA before it will start. Read it, then confirm below.</p>
-        ${text ? `<div class="eula-box" tabindex="0" aria-label="Minecraft EULA text">${esc(text)}</div>
-                  <p class="small muted">Official version: <a href="${esc(w.eula.url)}" target="_blank" rel="noopener">${esc(w.eula.url)}</a></p>`
-               : `<div class="alert info">Read the full EULA on Mojang's site: <a href="${esc(w.eula.url)}" target="_blank" rel="noopener">open the Minecraft EULA</a> (new tab).</div>`}
-        <label class="check"><input type="checkbox" id="accept" ${w.accepted ? "checked" : ""}>
-          <span>I have read and agree to the Minecraft End User License Agreement.</span></label>
-        <div class="wizard-nav"><button type="button" class="btn ghost" id="back">Back</button><button class="btn primary" id="next" ${w.accepted ? "" : "disabled"}>Next</button></div>`);
-      const acc = $("accept");
-      acc.onchange = () => { w.accepted = acc.checked; $("next").disabled = !acc.checked; };
-    } else {
-      const src = { vanilla: "Mojang", paper: "PaperMC", fabric: "FabricMC" }[w.loader];
-      $app.innerHTML = frame(`
-        <h2>Check and create</h2>
-        <dl class="review">
-          <dt>Name</dt><dd>${esc(w.name.trim() || w.slug)}</dd>
-          <dt>Software</dt><dd>${esc(loaderName(w.loader))} ${esc(w.version)}</dd>
-          <dt>Join address</dt><dd>mzf-${esc(w.slug)}.play.minekube.net</dd>
-          <dt>Reserved for later</dt><dd>${esc(w.slug)}.mc.mzforge.com</dd>
-          <dt>EULA</dt><dd>Accepted</dd>
-        </dl>
-        <div class="alert info">Creating it downloads a ZIP with the launcher. To run it you'll also need <b>server.jar</b> from ${src} and Java installed. The next page walks you through both, and gives you this server's manage link.</div>
-        <div class="wizard-nav"><button type="button" class="btn ghost" id="back">Back</button><button class="btn primary" id="next">Create server and download</button></div>`);
-    }
-    const back = $("back");
-    if (back) back.onclick = () => { w.step--; draw(); };
+    const S = steps();
+    let inner;
+    if (cfg.step === 0) inner = `
+      <h2>Server type</h2>
+      <div class="field"><label for="name">Server name</label>
+        <input id="name" type="text" maxlength="48" autocomplete="off" value="${esc(cfg.name)}" placeholder="Friday Night SMP"></div>
+      <div class="field"><label for="slug">Address name</label>
+        <div class="slug-input"><span>mzf-</span><input id="slug" type="text" maxlength="32" autocomplete="off" spellcheck="false" autocapitalize="off" value="${esc(cfg.slug)}" aria-describedby="slug-preview slug-msg"></div>
+        <div class="addr-preview" id="slug-preview" aria-live="polite">${previewAddr(cfg.slug)}</div>
+        <div class="hint" id="slug-msg" aria-live="polite"></div>
+        <div class="hint">Lowercase letters, numbers, and hyphens. Permanent: it can't be changed later.</div></div>
+      <fieldset class="field" style="border:0;padding:0"><legend class="label">Software</legend>
+        <div class="choices">${Object.entries(LOADERS).map(([k, l]) => `
+          <div class="choice"><input type="radio" name="loader" id="l-${k}" value="${k}" ${cfg.loader === k ? "checked" : ""}>
+          <label for="l-${k}"><b>${l.name}</b><span>${l.blurb}</span></label></div>`).join("")}</div></fieldset>
+      <div class="field"><label for="version">Minecraft version</label>
+        <select id="version">${cfg.versions.map(v => `<option ${v === cfg.version ? "selected" : ""}>${esc(v)}</option>`).join("")}</select>
+        <div class="hint">Players join with this same version${cfg.loader === "paper" ? " (or add ViaVersion later to let newer ones in)" : ""}.</div></div>`;
+    else if (cfg.step === 1) inner = `<h2>The basics</h2><p class="muted">Sensible defaults are already set. Change only what you want.</p>${basicsHTML(cfg)}`;
+    else if (cfg.step === 2) inner = `<h2>Appearance</h2><p class="muted">How your server looks in Minecraft's server list.</p>${appearanceHTML(cfg)}`;
+    else if (cfg.step === 3) inner = !MOD_LOADERS[cfg.loader] ? `
+      <h2>Add-ons</h2><div class="alert info">Vanilla runs the game exactly as Mojang ships it, so it can't use mods or plugins. Go back and pick Paper for plugins or Fabric for mods, or carry on.</div>` : `
+      <h2>${esc(S[3])}</h2>
+      <p class="muted">Tick a few popular ones, or search Modrinth for anything else. They're included in your download, and the launcher keeps them up to date with what you choose here.</p>
+      ${pickerHTML(cfg.loader, cfg.version)}
+      <div class="field" style="margin-top:20px"><span class="label">Your ${addonWord(cfg.loader)} (<span id="p-count">${cfg.addons.length}</span>)</span>
+        <ul class="chips" id="p-chips"></ul>
+        <div class="hint">Anything these need (like Fabric API) is added automatically when the server is created.</div></div>`;
+    else inner = `
+      <h2>Check and create</h2>
+      <dl class="review">
+        <dt>Name</dt><dd>${esc(cfg.name.trim() || cfg.slug)}</dd>
+        <dt>Join address</dt><dd>mzf-${esc(cfg.slug)}.play.minekube.net</dd>
+        <dt>Software</dt><dd>${esc(loaderName(cfg.loader))} ${esc(cfg.version)}</dd>
+        <dt>Memory</dt><dd>${esc(gbLabel(cfg.ram_mb))}, up to ${esc(cfg.max_players)} players</dd>
+        ${MOD_LOADERS[cfg.loader] ? `<dt>${esc(S[3])}</dt><dd>${cfg.addons.length ? cfg.addons.map(a => esc(a.title)).join(", ") : "None"}</dd>` : ""}
+        <dt>Admins</dt><dd>${cfg.ops.length ? esc(cfg.ops.join(", ")) : `<span class="warn-text">None. Add yourself on the Basics step to use commands.</span>`}</dd>
+      </dl>
+      <h3>Minecraft End User License Agreement</h3>
+      ${cfg.eula.text ? `<div class="eula-box" tabindex="0" aria-label="Minecraft EULA text">${esc(cfg.eula.text)}</div>` : ""}
+      <p class="small">Every Minecraft server must accept Mojang's EULA. <a href="${esc(cfg.eula.url)}" target="_blank" rel="noopener">Read the Minecraft EULA</a>.</p>
+      <label class="check"><input type="checkbox" id="accept" ${cfg.accepted ? "checked" : ""}>
+        <span>I have read and agree to the Minecraft End User License Agreement.</span></label>`;
+
+    const last = cfg.step === S.length - 1;
+    $app.innerHTML = `
+    <div class="wrap">
+      <h1 class="wiz-title">Create a server</h1>
+      <ol class="steps-nav">${S.map((s, i) => `<li><button type="button" data-go="${i}" class="${i < cfg.step ? "done" : ""}" ${i === cfg.step ? 'aria-current="step"' : ""} ${i > cfg.step ? "disabled" : ""}><span class="num">${i < cfg.step ? "✓" : i + 1}</span>${esc(s)}</button></li>`).join("")}</ol>
+      <div class="wiz-layout">
+        <form class="card" id="f" novalidate><div id="err"></div>${inner}
+          <div class="wizard-nav">${cfg.step === 0 ? `<a class="btn ghost" href="#/">Cancel</a>` : `<button type="button" class="btn ghost" id="back">Back</button>`}
+            <button class="btn primary" id="next" ${last && !cfg.accepted ? "disabled" : ""}>${last ? "Create server and download" : "Next"}</button></div>
+        </form>
+        <div id="preview-slot">${previewCardHTML(cfg)}</div>
+      </div>
+    </div>`;
+
+    $app.querySelector(".steps-nav").onclick = e => { const b = e.target.closest("[data-go]"); if (b && !b.disabled) { cfg.step = +b.dataset.go; draw(); } };
+    const back = $("back"); if (back) back.onclick = () => { cfg.step--; draw(); };
     $("f").onsubmit = onNext;
+
+    if (cfg.step === 0) {
+      const name = $("name"), slug = $("slug");
+      if (!cfg.name) name.focus();
+      name.oninput = () => { cfg.name = name.value; updatePreview(); if (!cfg.slugEdited) { slug.value = slugify(name.value); checkSlug(slug.value); } };
+      slug.oninput = () => { cfg.slugEdited = true; const v = slug.value.toLowerCase().replace(/[^a-z0-9-]/g, ""); if (v !== slug.value) slug.value = v; checkSlug(v); };
+      if (cfg.slug) checkSlug(cfg.slug, true);
+      const changed = what => { if (cfg.addons.length) { cfg.addons = []; toast(`Add-ons cleared because the ${what} changed.`); } followRam(); updatePreview(); };
+      $app.querySelectorAll("[name=loader]").forEach(r => r.onchange = () => { cfg.loader = r.value; changed("software"); draw(); });
+      $("version").onchange = e => { cfg.version = e.target.value; changed("version"); };
+    } else if (cfg.step === 1) {
+      wireBasics($("f"), cfg, updatePreview);
+    } else if (cfg.step === 2) {
+      wireAppearance($("f"), cfg, updatePreview);
+    } else if (cfg.step === 3 && MOD_LOADERS[cfg.loader]) {
+      const drawChips = () => {
+        $("p-chips").innerHTML = cfg.addons.map(a => `<li class="chip">${esc(a.title)} <button type="button" aria-label="Remove ${esc(a.title)}" data-rm="${esc(a.project_id)}">×</button></li>`).join("") || `<li class="muted small">None yet.</li>`;
+        $("p-count").textContent = cfg.addons.length; followRam(); updatePreview();
+      };
+      drawChips();
+      const picker = wirePicker($("f"), cfg.loader, cfg.version, {
+        has: id => cfg.addons.some(a => a.project_id === id),
+        add: async (projectId, info) => {
+          const v = await compatibleVersion(cfg.loader, cfg.version, projectId);
+          if (!v) throw new Error(`No version of ${info.title || "that"} for ${loaderName(cfg.loader)} ${cfg.version} yet.`);
+          if (!cfg.addons.some(a => a.project_id === v.project_id)) cfg.addons.push({ project_id: v.project_id, version_id: v.id, title: info.title || projectId });
+          drawChips(); return v.project_id;
+        },
+        remove: async id => { cfg.addons = cfg.addons.filter(a => a.project_id !== id); drawChips(); },
+      });
+      $("p-chips").onclick = e => { const b = e.target.closest("[data-rm]"); if (b) { cfg.addons = cfg.addons.filter(a => a.project_id !== b.dataset.rm); drawChips(); picker.refresh(); } };
+    } else if (cfg.step === 4) {
+      const acc = $("accept");
+      acc.onchange = () => { cfg.accepted = acc.checked; $("next").disabled = !acc.checked; };
+    }
   }
 
   function checkSlug(v, immediate) {
-    w.slug = v; w.slugOK = false;
+    cfg.slug = v; cfg.slugOK = false;
     const msg = $("slug-msg");
     clearTimeout(slugTimer); slugSeq++;
-    $("slug-preview").innerHTML = previewHTML(v);
+    $("slug-preview").innerHTML = previewAddr(v);
     if (!v) { msg.textContent = ""; return; }
     if (v.length < 3) { msg.innerHTML = `<span class="bad-text">Use at least 3 characters.</span>`; return; }
     msg.textContent = "Checking…";
@@ -839,7 +1388,7 @@ async function viewCreate() {
       try {
         const r = await api("GET", "/slug-available?slug=" + encodeURIComponent(v));
         if (seq !== slugSeq) return;
-        w.slugOK = r.available;
+        cfg.slugOK = r.available;
         msg.innerHTML = r.available ? `<span class="ok-text">Available.</span>` : `<span class="bad-text">${esc(sentence(r.reason))}</span>`;
       } catch (e) { if (seq === slugSeq) msg.innerHTML = `<span class="bad-text">${esc(e.message)}</span>`; }
     }, immediate ? 0 : 350);
@@ -847,25 +1396,42 @@ async function viewCreate() {
 
   async function onNext(e) {
     e.preventDefault();
-    if (w.step === 0) {
-      if (!w.slugOK) return formError(w.slug ? "Pick an available address name first." : "Enter an address name for your server.");
-      w.step++; return draw();
+    if (cfg.step === 0) {
+      if (!cfg.slugOK) return formError(cfg.slug ? "Pick an available address name first." : "Enter an address name for your server.");
+      cfg.step++; return draw();
     }
-    if (w.step === 1) { w.step++; return draw(); }
-    if (w.step === 2) { if (w.accepted) { w.step++; draw(); } return; }
+    if (cfg.step === 1) {
+      if (!(cfg.max_players >= 1 && cfg.max_players <= 500)) return formError("Max players must be a whole number from 1 to 500.");
+      if (cfg.whitelist && !cfg.whitelist_players.length && !cfg.ops.length) return formError("Whitelist is on but nobody is on it. Add at least one player (or yourself as an admin).");
+    }
+    if (cfg.step < 4) { cfg.step++; return draw(); }
+    if (!cfg.accepted) return;
+
     const btn = $("next"); busy(btn, true, "Creating…");
+    const name = cfg.name.trim() || cfg.slug;
+    let r;
     try {
-      const name = w.name.trim() || w.slug;
-      const r = await api("POST", "/allocate", { slug: w.slug, name, loader: w.loader, mc_version: w.version, eula_accepted: w.accepted });
-      remember(r.server_id, r.manage_key, name);
-      btn.textContent = "Preparing download…";
-      try { await saveDownload(r.download, t => btn.textContent = t); } catch (e) { toast(e.message); }
-      location.hash = `#/servers/${r.server_id}/setup`;
+      r = await api("POST", "/allocate", { slug: cfg.slug, loader: cfg.loader, mc_version: cfg.version, eula_accepted: true, ...settingsPayload({ ...cfg, name }) });
     } catch (err) {
-      if (err.status === 409) { w.step = 0; w.slugOK = false; draw(); }
+      if (err.status === 409) { cfg.step = 0; cfg.slugOK = false; draw(); }
       else busy(btn, false, "Create server and download");
-      formError(err.message);
+      return formError(err.message);
     }
+    remember(r.server_id, r.manage_key, name);
+    const sv = { server_id: r.server_id, loader: cfg.loader, mc_version: cfg.version, mods: [] };
+    if (cfg.iconPNG) {
+      btn.textContent = "Saving icon…";
+      try { await api("PUT", `/servers/${r.server_id}/icon`, { png: cfg.iconPNG }, r.manage_key); } catch (err) { toast("Icon: " + err.message); }
+    }
+    for (const [i, a] of cfg.addons.entries()) {
+      btn.textContent = `Adding ${addonWord(cfg.loader)} ${i + 1} of ${cfg.addons.length}…`;
+      try { await addToServer(sv, r.manage_key, a.project_id); } catch (err) { toast(`${a.title}: ${err.message}`); }
+    }
+    try {
+      const files = await api("POST", `/servers/${r.server_id}/files`, undefined, r.manage_key);
+      await saveDownload(files.download, t => btn.textContent = t);
+    } catch (err) { toast(err.message); }
+    location.hash = `#/servers/${r.server_id}/setup`;
   }
   draw();
 }
@@ -912,7 +1478,7 @@ async function viewServer(id, tab) {
   $app.innerHTML = `
   <div class="wrap">
     <p class="small"><a href="#/servers">My servers</a></p>
-    <div class="server-top"><h1 id="sname">${esc(sv.name)}</h1></div>
+    <div class="server-top"><img src="${esc(API + sv.icon_url)}" alt="" width="56" height="56" onerror="this.src='${DEFAULT_ICON}'"><h1 id="sname">${esc(sv.name)}</h1></div>
     ${setup ? `<div class="alert ok" role="status">Server created. Your download should have started. If it didn't, use Download again below.</div>` : ""}
     ${renewBar}
     <nav class="tabs" aria-label="Server sections">
@@ -985,79 +1551,51 @@ function wireOverview(sv, key) {
 }
 
 // ----- Settings tab -----
-// Minecraft colour codes, for the MOTD preview.
-const MC_COLORS = { 0: "#000", 1: "#00a", 2: "#0a0", 3: "#0aa", 4: "#a00", 5: "#a0a", 6: "#fa0", 7: "#aaa", 8: "#555", 9: "#55f", a: "#5f5", b: "#5ff", c: "#f55", d: "#f5f", e: "#ff5", f: "#fff" };
-function motdPreviewHTML(text) {
-  let out = "", style = { color: "#aaa" };
-  const parts = String(text).split(/[&§]([0-9a-fk-or])/i);
-  for (let i = 0; i < parts.length; i++) {
-    if (i % 2 === 1) {
-      const c = parts[i].toLowerCase();
-      if (MC_COLORS[c]) style = { color: MC_COLORS[c] };
-      else if (c === "l") style.bold = true;
-      else if (c === "o") style.italic = true;
-      else if (c === "n") style.underline = true;
-      else if (c === "m") style.strike = true;
-      else if (c === "r") style = { color: "#aaa" };
-      continue;
-    }
-    if (!parts[i]) continue;
-    const css = `color:${style.color};${style.bold ? "font-weight:700;" : ""}${style.italic ? "font-style:italic;" : ""}` +
-      `${style.underline || style.strike ? `text-decoration:${style.underline ? "underline " : ""}${style.strike ? "line-through" : ""};` : ""}`;
-    out += `<span style="${css}">${esc(parts[i])}</span>`;
-  }
-  return out;
+function cfgFromServer(sv) {
+  return { ...sv, version: sv.mc_version, addons: sv.mods || [], iconPNG: "", ramTouched: true,
+    whitelist_players: [...(sv.whitelist_players || [])], ops: [...(sv.ops || [])] };
 }
 function settingsTabHTML(sv) {
-  const opt = (v, cur, label) => `<option value="${v}" ${v === cur ? "selected" : ""}>${label}</option>`;
+  const cfg = cfgFromServer(sv);
   return `
-    <form class="card" id="settings" novalidate>
-      <div id="err"></div>
-      <div class="field"><label for="s-name">Server name</label>
-        <input id="s-name" type="text" maxlength="48" value="${esc(sv.name)}">
-        <div class="hint">Shown on MZForge. The join address stays the same.</div></div>
-      <div class="field"><label for="s-motd">Description (MOTD)</label>
-        <input id="s-motd" type="text" maxlength="120" value="${esc(sv.motd)}" placeholder="${esc(sv.name)}">
-        <div class="hint">The line under your server's name in Minecraft's Multiplayer list. Colours: &amp;6gold, &amp;bcyan, &amp;lbold, &amp;r reset.</div>
-        <div class="motd-preview" aria-hidden="true"><span class="t">${esc(sv.name)}</span><span id="s-motd-preview">${motdPreviewHTML(sv.motd || sv.name)}</span></div></div>
-      <div class="settings-grid">
-        <div class="field"><label for="s-max">Max players</label>
-          <input id="s-max" type="text" inputmode="numeric" value="${esc(sv.max_players)}"></div>
-        <div class="field"><label for="s-mode">Game mode</label>
-          <select id="s-mode">${opt("survival", sv.gamemode, "Survival")}${opt("creative", sv.gamemode, "Creative")}${opt("adventure", sv.gamemode, "Adventure")}</select></div>
-        <div class="field"><label for="s-diff">Difficulty</label>
-          <select id="s-diff">${opt("peaceful", sv.difficulty, "Peaceful")}${opt("easy", sv.difficulty, "Easy")}${opt("normal", sv.difficulty, "Normal")}${opt("hard", sv.difficulty, "Hard")}</select></div>
-        <div class="field"><span class="label">PvP</span>
-          <label class="check"><input type="checkbox" id="s-pvp" ${sv.pvp ? "checked" : ""}><span>Players can hurt each other</span></label></div>
+    <div class="wiz-layout">
+      <div>
+        <form class="card" id="settings" novalidate>
+          <div id="err"></div>
+          <h2>Appearance</h2>
+          ${appearanceHTML(cfg)}
+          <h2 class="panel">Basics</h2>
+          ${basicsHTML(cfg)}
+          <p class="hint">Saved here, then applied by MZForgeLauncher.exe the next time it starts: restart the launcher to apply them to a running server. Game mode applies to new players; existing players keep theirs.</p>
+          <button class="btn primary" id="s-save">Save settings</button>
+        </form>
+        <section class="danger-zone panel">
+          <h2>Delete server</h2>
+          <p class="muted small">The launcher from this download stops working, and the address <b>mzf-${esc(sv.slug)}</b> is retired for good: nobody can use it again, including you. World files on your PC aren't touched.</p>
+          <form id="del"><label class="label" for="confirm">Type ${esc(sv.slug)} to confirm</label>
+            <div class="inline-form"><input id="confirm" type="text" autocomplete="off" spellcheck="false" autocapitalize="off"><button class="btn danger" id="delbtn" disabled>Delete server</button></div></form>
+        </section>
       </div>
-      <p class="hint" style="margin-top:0">Saved here, then applied to server.properties by MZForgeLauncher.exe the next time it starts. Restart the launcher to apply them to a running server. Game mode applies to new players; existing players keep theirs.</p>
-      <button class="btn primary" id="s-save">Save settings</button>
-    </form>
-
-    <section class="danger-zone panel">
-      <h2>Delete server</h2>
-      <p class="muted small">The launcher from this download stops working, and the address <b>mzf-${esc(sv.slug)}</b> is retired for good: nobody can use it again, including you. World files on your PC aren't touched.</p>
-      <form id="del"><label class="label" for="confirm">Type ${esc(sv.slug)} to confirm</label>
-        <div class="inline-form"><input id="confirm" type="text" autocomplete="off" spellcheck="false" autocapitalize="off"><button class="btn danger" id="delbtn" disabled>Delete server</button></div></form>
-    </section>`;
+      <div id="preview-slot">${previewCardHTML(cfg)}</div>
+    </div>`;
 }
 function wireSettings(sv, key) {
-  const id = sv.server_id;
-  const motd = $("s-motd"), name = $("s-name");
-  const preview = () => { $("s-motd-preview").innerHTML = motdPreviewHTML(motd.value || name.value); };
-  motd.oninput = preview; name.oninput = preview;
-  $("settings").onsubmit = async e => {
+  const id = sv.server_id, cfg = cfgFromServer(sv), form = $("settings");
+  const updatePreview = () => { $("preview-slot").innerHTML = previewCardHTML(cfg); };
+  wireAppearance(form, cfg, updatePreview, async png => {
+    const r = png ? await api("PUT", `/servers/${id}/icon`, { png }, key) : await api("DELETE", `/servers/${id}/icon`, undefined, key);
+    cfg.has_icon = r.has_icon; cfg.icon_url = r.icon_url;
+    toast(png ? "Icon saved" : "Back to the MZForge icon");
+  });
+  wireBasics(form, cfg, updatePreview);
+  form.onsubmit = async e => {
     e.preventDefault();
-    const max = Number($("s-max").value);
-    if (!Number.isInteger(max) || max < 1 || max > 500) return formError("Max players must be a whole number from 1 to 500.");
+    if (!(cfg.max_players >= 1 && cfg.max_players <= 500)) return formError("Max players must be a whole number from 1 to 500.");
     const btn = $("s-save"); busy(btn, true, "Saving…");
     try {
-      const r = await api("PATCH", `/servers/${id}`, {
-        name: name.value, motd: motd.value, max_players: max,
-        gamemode: $("s-mode").value, difficulty: $("s-diff").value, pvp: $("s-pvp").checked,
-      }, key);
+      const r = await api("PATCH", `/servers/${id}`, settingsPayload(cfg), key);
       remember(id, key, r.name); $("sname").textContent = r.name; setTitle(r.name);
-      formError(""); toast("Settings saved");
+      formError(""); toast("Settings saved. Restart the launcher to apply them.");
     } catch (err) { formError(err.message); }
     busy(btn, false, "Save settings");
   };
@@ -1073,108 +1611,59 @@ function wireSettings(sv, key) {
 }
 
 // ----- Mods & Plugins tab -----
-// Search goes straight to Modrinth's public API; adding sends only the
-// chosen version's id to MZForge, which re-checks it with Modrinth.
-const MODRINTH = "https://api.modrinth.com/v2";
-const MOD_LOADERS = { fabric: ["fabric"], paper: ["paper", "spigot", "bukkit"] };
 function modsTabHTML(sv) {
   if (!MOD_LOADERS[sv.loader]) {
     return `<div class="empty"><h2>Vanilla doesn't run mods or plugins</h2>
       <p class="muted">This server uses Vanilla Minecraft. For plugins, create a Paper server; for mods, a Fabric server. You can copy your world folder across to the new server.</p>
       <a class="btn primary" href="#/new">Create a server</a></div>`;
   }
-  const what = sv.loader === "fabric" ? "mods" : "plugins";
+  const what = addonWord(sv.loader);
   return `
     <section>
-      <h2>Installed ${what} <span class="muted small">(${sv.mods.length})</span></h2>
+      <h2>Installed ${what} <span class="muted small">(<span id="m-count">${sv.mods.length}</span>)</span></h2>
       <ul class="mod-list" id="installed"></ul>
       <p class="hint">New ${what} are downloaded by MZForgeLauncher.exe the next time it starts, and included when you use Download again. Removing one here doesn't delete it from your PC: delete the file from the <b>${esc(sv.mods_folder)}</b> folder too.</p>
     </section>
-    <section class="panel">
+    <section class="card panel">
       <h2>Add ${what}</h2>
-      <p class="muted small">From <a href="https://modrinth.com" target="_blank" rel="noopener">Modrinth</a>, showing only ${what} for ${esc(loaderName(sv.loader))} ${esc(sv.mc_version)}${sv.loader === "fabric" ? " that run on a server" : ""}.</p>
-      <form class="search-row" id="msearch"><label class="sr-only" for="mq">Search ${what}</label>
-        <input id="mq" type="search" placeholder="Search ${what}, e.g. ${sv.loader === "fabric" ? "Lithium" : "EssentialsX"}" autocomplete="off"><button class="btn">Search</button></form>
-      <ul class="mod-list" id="results" aria-live="polite"></ul>
+      ${pickerHTML(sv.loader, sv.mc_version)}
     </section>`;
-}
-function modRowHTML(m, action) {
-  const icon = m.icon_url ? `<img src="${esc(m.icon_url)}" alt="" loading="lazy" onerror="this.outerHTML='<span class=noicon></span>'">` : `<span class="noicon"></span>`;
-  return `<li class="mod">${icon}<div><b>${esc(m.title)}</b><span class="meta">${esc(m.sub)}</span></div>${action}</li>`;
 }
 function wireMods(sv, key) {
   if (!MOD_LOADERS[sv.loader]) return;
-  const id = sv.server_id;
-  let mods = sv.mods;
-  const what = sv.loader === "fabric" ? "mods" : "plugins";
-
+  const what = addonWord(sv.loader);
   const drawInstalled = () => {
-    $("installed").innerHTML = mods.length ? mods.map(m => modRowHTML(
+    $("installed").innerHTML = sv.mods.length ? sv.mods.map(m => modRowHTML(
       { title: m.title, icon_url: m.icon_url, sub: `${m.version_number} (${m.filename})` },
       `<button class="btn small ghost" data-remove="${esc(m.project_id)}">Remove</button>`)).join("")
-      : `<li class="muted">No ${what} yet. Search below to add some.</li>`;
-    const tabLink = document.querySelector(`.tabs a[href$="/mods"]`);
-    if (tabLink) tabLink.textContent = `${what[0].toUpperCase() + what.slice(1)}${mods.length ? ` (${mods.length})` : ""}`;
+      : `<li class="muted">No ${what} yet. Pick some below.</li>`;
+    $("m-count").textContent = sv.mods.length;
+    const tab = document.querySelector(`.tabs a[href$="/mods"]`);
+    if (tab) tab.textContent = `${what[0].toUpperCase() + what.slice(1)}${sv.mods.length ? ` (${sv.mods.length})` : ""}`;
   };
   drawInstalled();
-
+  const remove = async projectId => {
+    const r = await api("DELETE", `/servers/${sv.server_id}/mods/${projectId}`, undefined, key);
+    sv.mods = r.mods; drawInstalled(); picker.refresh();
+    toast(`Removed. Also delete its file from your ${sv.mods_folder} folder.`);
+  };
+  const picker = wirePicker(document, sv.loader, sv.mc_version, {
+    has: id => sv.mods.some(m => m.project_id === id),
+    add: async projectId => {
+      const before = sv.mods.length;
+      const id = await addToServer(sv, key, projectId);
+      drawInstalled();
+      const extra = sv.mods.length - before - 1;
+      toast(extra > 0 ? `Added, plus ${extra} it needs` : "Added");
+      return id;
+    },
+    remove,
+  });
   $("installed").onclick = async e => {
     const b = e.target.closest("[data-remove]"); if (!b) return;
     b.disabled = true;
-    try { const r = await api("DELETE", `/servers/${id}/mods/${b.dataset.remove}`, undefined, key); mods = r.mods; drawInstalled(); toast("Removed. Also delete its file from your " + sv.mods_folder + " folder."); }
-    catch (err) { toast(err.message); b.disabled = false; }
+    try { await remove(b.dataset.remove); } catch (err) { toast(err.message); b.disabled = false; }
   };
-
-  // Newest version of a project compatible with this server, or null.
-  const compatibleVersion = async projectId => {
-    const q = `loaders=${encodeURIComponent(JSON.stringify(MOD_LOADERS[sv.loader]))}&game_versions=${encodeURIComponent(JSON.stringify([sv.mc_version]))}`;
-    const res = await fetch(`${MODRINTH}/project/${encodeURIComponent(projectId)}/version?${q}`);
-    if (!res.ok) throw new Error("Couldn't reach Modrinth. Try again in a moment.");
-    const versions = await res.json();
-    return versions[0] || null;
-  };
-  // Adds a project plus its required dependencies (a few levels deep).
-  const addProject = async (projectId, depth = 0, added = []) => {
-    const v = await compatibleVersion(projectId);
-    if (!v) { if (depth === 0) throw new Error(`No version of this for ${loaderName(sv.loader)} ${sv.mc_version} yet.`); return added; }
-    const r = await api("POST", `/servers/${id}/mods`, { version_id: v.id }, key);
-    mods = r.mods; added.push(r.added.title);
-    if (depth < 3) for (const dep of r.missing_dependencies) { try { await addProject(dep, depth + 1, added); } catch {} }
-    return added;
-  };
-
-  let lastQuery = null;
-  const search = async q => {
-    lastQuery = q;
-    const f = sv.loader === "fabric"
-      ? [["categories:fabric"], [`versions:${sv.mc_version}`], ["project_type:mod"], ["server_side:required", "server_side:optional"]]
-      : [["categories:paper", "categories:spigot", "categories:bukkit"], [`versions:${sv.mc_version}`]];
-    const url = `${MODRINTH}/search?limit=20&index=${q ? "relevance" : "downloads"}&query=${encodeURIComponent(q)}&facets=${encodeURIComponent(JSON.stringify(f))}`;
-    $("results").innerHTML = `<li class="muted">Searching…</li>`;
-    let data;
-    try { const res = await fetch(url); if (!res.ok) throw 0; data = await res.json(); }
-    catch { if (lastQuery === q) $("results").innerHTML = `<li class="muted">Couldn't reach Modrinth. Try again in a moment.</li>`; return; }
-    if (lastQuery !== q) return;
-    const hits = data.hits || [];
-    $("results").innerHTML = hits.length ? hits.map(h => {
-      const have = mods.some(m => m.project_id === h.project_id);
-      return modRowHTML(
-        { title: h.title, icon_url: String(h.icon_url || "").startsWith("https://cdn.modrinth.com/") ? h.icon_url : "", sub: `${h.description} (${Number(h.downloads).toLocaleString()} downloads)` },
-        have ? `<span class="muted small">Added</span>` : `<button class="btn small primary" data-add="${esc(h.project_id)}">Add</button>`);
-    }).join("") : `<li class="muted">Nothing found for ${esc(loaderName(sv.loader))} ${esc(sv.mc_version)}.</li>`;
-  };
-  $("msearch").onsubmit = e => { e.preventDefault(); search($("mq").value.trim()); };
-  $("results").onclick = async e => {
-    const b = e.target.closest("[data-add]"); if (!b) return;
-    b.disabled = true; b.textContent = "Adding…";
-    try {
-      const added = await addProject(b.dataset.add);
-      drawInstalled();
-      b.replaceWith(Object.assign(document.createElement("span"), { className: "muted small", textContent: "Added" }));
-      toast(added.length > 1 ? `Added ${added[0]}, plus required ${added.slice(1).join(", ")}` : `Added ${added[0]}`);
-    } catch (err) { toast(err.message); b.disabled = false; b.textContent = "Add"; }
-  };
-  search("");
 }
 
 function setupHTML(sv, jar, withHeading = true) {
@@ -1221,7 +1710,7 @@ async function viewShare(id) {
       : `It's offline. It runs on its owner's PC, so it's up whenever they have MZForge open.${last ? ` Last online ${last}.` : ""}`;
     return `
     <div class="wrap narrow">
-      <h1>${esc(sv.name)}</h1>
+      <div class="server-top"><img src="${esc(API + sv.icon_url)}" alt="" width="56" height="56" onerror="this.src='${DEFAULT_ICON}'"><h1>${esc(sv.name)}</h1></div>
       <p class="muted">${esc(loaderName(sv.loader))} ${esc(sv.mc_version)}. Join with the same Minecraft version.</p>
       ${plateHTML(sv, { big: true, caption: "Join address" })}
       <p class="status-line muted">${esc(line)} This page checks again every 20 seconds.</p>
@@ -1313,7 +1802,16 @@ function viewHelp(anchor) {
           </ul></section>
 
         <section id="h-settings"><h2>Server settings</h2>
-          <p>The <b>Settings</b> tab sets your server's description in the Multiplayer list (with colour codes like &amp;6 for gold), max players, game mode, difficulty and PvP. They're saved into server.properties by the launcher each time it starts, so restart the launcher to apply changes. Other lines in server.properties are yours to edit and are left alone.</p></section>
+          <p>Everything you pick when creating a server can be changed later on its <b>Settings</b> tab:</p>
+          <ul>
+            <li><b>Memory (RAM):</b> MZForge recommends an amount based on your software, player count and add-ons. Keep it under about 60% of your PC's total memory, or your PC itself slows down.</li>
+            <li><b>Max players, game mode, difficulty, PvP.</b></li>
+            <li><b>Who can join:</b> anyone, or only players on your whitelist.</li>
+            <li><b>Account type:</b> official accounts (recommended), or cracked, which lets in players without a paid Minecraft account. In cracked mode anyone can join using any name, so turn on the whitelist.</li>
+            <li><b>Admins:</b> players who get operator (op) powers for commands like /gamemode. Add yourself.</li>
+            <li><b>Icon and description:</b> the picture and text shown in Minecraft's server list. Any picture works; it's cropped and shrunk to the 64&times;64 Minecraft needs. Servers without one use the MZForge icon.</li>
+          </ul>
+          <p>The launcher applies your settings each time it starts, so restart it after changing them. Players you add in-game with /whitelist add or /op are kept. Other lines in server.properties are yours to edit.</p></section>
 
         <section id="h-troubleshooting"><h2>Friends can't join</h2>
           <ul>

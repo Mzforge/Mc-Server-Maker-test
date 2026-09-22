@@ -48,6 +48,13 @@ const ADDED_COLUMNS = {
   gamemode: `TEXT NOT NULL DEFAULT 'survival'`,
   difficulty: `TEXT NOT NULL DEFAULT 'easy'`,
   mods: `TEXT NOT NULL DEFAULT '[]'`,
+  ram_mb: `INTEGER NOT NULL DEFAULT 4096`,
+  port: `INTEGER NOT NULL DEFAULT 25565`,
+  whitelist: `INTEGER NOT NULL DEFAULT 0`,
+  whitelist_players: `TEXT NOT NULL DEFAULT '[]'`,
+  ops: `TEXT NOT NULL DEFAULT '[]'`,
+  online_mode: `INTEGER NOT NULL DEFAULT 1`,
+  icon: `TEXT NOT NULL DEFAULT ''`,
 };
 
 let schemaReady = false;
@@ -183,7 +190,106 @@ function parseSettings(req) {
     if (!DIFFICULTIES.has(req.difficulty)) return [null, "difficulty must be peaceful, easy, normal, or hard"];
     u.difficulty = req.difficulty;
   }
+  if ("ram_mb" in req) {
+    const n = Number(req.ram_mb);
+    if (!Number.isInteger(n) || n < 1024 || n > 32768 || n % 256 !== 0) return [null, "memory must be between 1 GB and 32 GB"];
+    u.ram_mb = n;
+  }
+  if ("port" in req) {
+    const n = Number(req.port);
+    if (!Number.isInteger(n) || n < 1024 || n > 65535) return [null, "port must be a number from 1024 to 65535"];
+    u.port = n;
+  }
+  if ("whitelist" in req) {
+    if (typeof req.whitelist !== "boolean") return [null, "whitelist must be true or false"];
+    u.whitelist = req.whitelist ? 1 : 0;
+  }
+  if ("online_mode" in req) {
+    if (typeof req.online_mode !== "boolean") return [null, "online_mode must be true or false"];
+    u.online_mode = req.online_mode ? 1 : 0;
+  }
+  for (const [field, max] of [["whitelist_players", 200], ["ops", 20]]) {
+    if (!(field in req)) continue;
+    if (!Array.isArray(req[field]) || req[field].length > max) return [null, `${field === "ops" ? "admins" : "whitelist"}: up to ${max} names`];
+    const names = [];
+    for (const n of req[field]) {
+      const name = String(typeof n === "object" && n ? n.name : n).trim();
+      if (!MC_NAME.test(name)) return [null, `"${name}" isn't a valid Minecraft username (3-16 letters, numbers or _)`];
+      if (!names.some((x) => x.toLowerCase() === name.toLowerCase())) names.push(name);
+    }
+    u[field] = names; // resolved to UUIDs by resolvePlayers()
+  }
   return [u, null];
+}
+
+const MC_NAME = /^[A-Za-z0-9_]{3,16}$/;
+const dashed = (hex) => `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+
+// Official accounts: look the name up with Mojang (also catches typos).
+// Returns { name, uuid } with Mojang's capitalisation, or null if no such account.
+async function mojangPlayer(env, name) {
+  const base = env.MOJANG_API || "https://api.mojang.com/users/profiles/minecraft/";
+  const res = await fetch(base + encodeURIComponent(name), { cf: { cacheTtl: 3600, cacheEverything: true } });
+  if (res.status === 404 || res.status === 204) return null;
+  if (!res.ok) throw new Error(`Mojang HTTP ${res.status}`);
+  const j = await res.json().catch(() => null);
+  if (!j?.id || !/^[0-9a-f]{32}$/i.test(j.id)) return null;
+  return { name: j.name, uuid: dashed(j.id.toLowerCase()) };
+}
+
+// Cracked/offline servers identify players by a UUID derived from the name
+// (Java's UUID.nameUUIDFromBytes("OfflinePlayer:" + name), an MD5 v3 UUID).
+async function offlineUUID(name) {
+  const h = new Uint8Array(await crypto.subtle.digest("MD5", new TextEncoder().encode("OfflinePlayer:" + name)));
+  h[6] = (h[6] & 0x0f) | 0x30;
+  h[8] = (h[8] & 0x3f) | 0x80;
+  return dashed([...h].map((b) => b.toString(16).padStart(2, "0")).join(""));
+}
+
+// Turns name lists into stored [{name, uuid}] entries. Official-account
+// servers need real Mojang accounts; cracked ones accept any valid name.
+async function resolvePlayers(env, names, online, previous = []) {
+  const out = [];
+  for (const name of names) {
+    const known = previous.find((p) => p.name.toLowerCase() === name.toLowerCase() && p.uuid);
+    if (online) {
+      if (known) { out.push(known); continue; }
+      const p = await mojangPlayer(env, name);
+      if (!p) throw new UserError(`there's no Minecraft account called "${name}". Check the spelling, or switch to cracked mode`);
+      out.push(p);
+    } else {
+      out.push({ name: known?.name || name, uuid: known?.uuid || "" });
+    }
+  }
+  return out;
+}
+class UserError extends Error {}
+const parseList = (text) => { try { return JSON.parse(text || "[]"); } catch { return []; } };
+
+// Entries for whitelist.json / ops.json, with the UUID the server will
+// actually see for its current account type.
+async function playerFileEntries(rec, field) {
+  const online = !!rec.online_mode;
+  const out = [];
+  for (const p of parseList(rec[field])) {
+    const uuid = online ? p.uuid : await offlineUUID(p.name);
+    if (!uuid) continue;
+    out.push(field === "ops" ? { uuid, name: p.name, level: 4, bypassesPlayerLimit: false } : { uuid, name: p.name });
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- server icon
+// Minecraft only shows server-icon.png if it's a 64x64 PNG. The website
+// resizes uploads in the browser; this double-checks before storing.
+function validIcon(b64) {
+  if (typeof b64 !== "string" || b64.length > 90_000) return false;
+  let bin;
+  try { bin = atob(b64); } catch { return false; }
+  const sig = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  if (bin.length < 33 || !sig.every((c, i) => bin.charCodeAt(i) === c) || bin.slice(12, 16) !== "IHDR") return false;
+  const u32 = (o) => ((bin.charCodeAt(o) << 24) | (bin.charCodeAt(o + 1) << 16) | (bin.charCodeAt(o + 2) << 8) | bin.charCodeAt(o + 3)) >>> 0;
+  return u32(16) === 64 && u32(20) === 64;
 }
 
 // Java .properties value escaping. Minecraft has read server.properties as
@@ -215,12 +321,17 @@ function managedProperties(rec) {
     pvp: rec.pvp ? "true" : "false",
     gamemode: rec.gamemode,
     difficulty: rec.difficulty,
+    "server-port": String(rec.port || 25565),
+    "online-mode": rec.online_mode ? "true" : "false",
+    "white-list": rec.whitelist ? "true" : "false",
+    "enforce-whitelist": rec.whitelist ? "true" : "false",
   };
 }
 
 function serverPropertiesFile(rec) {
-  const lines = ["#Minecraft server properties", "#Generated by MZForge. motd, max-players, pvp, gamemode and difficulty",
-    "#are set on the website and re-applied by MZForgeLauncher.exe on every start.",
+  const lines = ["#Minecraft server properties", "#Generated by MZForge. motd, max-players, pvp, gamemode, difficulty, server-port,",
+    "#online-mode and white-list are set on the website and re-applied by",
+    "#MZForgeLauncher.exe on every start.",
     "#Everything else can be edited here; Minecraft adds the remaining defaults on first run."];
   for (const [k, v] of Object.entries(managedProperties(rec))) lines.push(`${k}=${v}`);
   return lines.join("\n") + "\n";
@@ -480,8 +591,18 @@ async function view(env, rec, owned) {
     motd: rec.motd || "",
     owned,
   };
+  v.icon_url = `/servers/${rec.server_id}/icon.png${rec.icon ? "?v=" + rec.icon.length.toString(36) + rec.icon.slice(-6).replace(/[^A-Za-z0-9]/g, "") : ""}`;
+  v.has_icon = !!rec.icon;
+  v.max_players = rec.max_players;
+  v.gamemode = rec.gamemode;
   if (owned) {
     Object.assign(v, {
+      ram_mb: rec.ram_mb,
+      port: rec.port,
+      whitelist: !!rec.whitelist,
+      whitelist_players: parseList(rec.whitelist_players).map((p) => p.name),
+      ops: parseList(rec.ops).map((p) => p.name),
+      online_mode: !!rec.online_mode,
       created_at: rec.created_at,
       max_players: rec.max_players,
       pvp: !!rec.pvp,
@@ -498,9 +619,10 @@ async function view(env, rec, owned) {
 //
 // The browser zips these together with /MZForgeLauncher.exe.
 
-function downloadFiles(rec, apiBase, jar, manageURL, webURL) {
+async function downloadFiles(rec, apiBase, jar, manageURL, webURL) {
   const properties =
-    `server-id=${rec.server_id}\nserver-token=${rec.server_token}\nhostname=${rec.hostname}\nmc-port=25565\n` +
+    `server-id=${rec.server_id}\nserver-token=${rec.server_token}\nhostname=${rec.hostname}\nmc-port=${rec.port || 25565}\n` +
+    `ram=${rec.ram_mb || 4096}M\n` +
     `api-base=${apiBase}\nconnect-endpoint=${rec.connect_endpoint}\nloader=${rec.loader}\nmc-version=${rec.mc_version}\n` +
     `renew-url=${manageURL}\nweb-url=${webURL}\n`;
   const mods = parseMods(rec);
@@ -555,7 +677,13 @@ your server page. The launcher applies them each time it starts.
 `.replace(/\r?\n/g, "\r\n");
   // Windows internet shortcut: double-click opens the server's manage page.
   const renewShortcut = `[InternetShortcut]\r\nURL=${manageURL}\r\n`;
+  const extra = {};
+  const wl = await playerFileEntries(rec, "whitelist_players");
+  const ops = await playerFileEntries(rec, "ops");
+  if (wl.length) extra["whitelist.json"] = JSON.stringify(wl, null, 2);
+  if (ops.length) extra["ops.json"] = JSON.stringify(ops, null, 2);
   return {
+    icon_png: rec.icon || "", // empty = the website adds the default MZForge icon
     filename: `mzforge-${rec.slug}.zip`,
     files: {
       "mzforge.properties": properties,
@@ -563,6 +691,7 @@ your server page. The launcher applies them each time it starts.
       "server.properties": serverPropertiesFile(rec),
       "README.txt": readme,
       "Renew-Server.url": renewShortcut,
+      ...extra,
     },
     mods_folder: folder,
     mods: mods.map(({ title, filename, url, sha512 }) => ({ title, filename, url, sha512 })),
@@ -574,6 +703,27 @@ function webBase(env, url) {
 }
 
 // ---------------------------------------------------------------- handlers
+
+// Validates settings from a request and resolves player names, for both
+// create and edit. Returns column -> value updates.
+async function settingsUpdates(env, req, rec) {
+  const [updates, e] = parseSettings(req);
+  if (e) throw new UserError(e);
+  const online = "online_mode" in updates ? !!updates.online_mode : rec ? !!rec.online_mode : true;
+  const switchedToOnline = rec && !rec.online_mode && online;
+  for (const f of ["whitelist_players", "ops"]) {
+    const names = f in updates ? updates[f] : switchedToOnline ? parseList(rec[f]).map((p) => p.name) : null;
+    if (names) updates[f] = JSON.stringify(await resolvePlayers(env, names, online, rec ? parseList(rec[f]) : []));
+  }
+  return updates;
+}
+
+async function applyUpdates(env, id, updates) {
+  const cols = Object.keys(updates); // keys come only from parseSettings / fixed names
+  if (!cols.length) return;
+  await env.DB.prepare(`UPDATE servers SET ${cols.map((c, i) => `${c} = ?${i + 1}`).join(", ")} WHERE server_id = ?${cols.length + 1}`)
+    .bind(...cols.map((c) => updates[c]), id).run();
+}
 
 async function handleAllocate(request, env, url) {
   let req;
@@ -594,6 +744,8 @@ async function handleAllocate(request, env, url) {
     displayName = n;
   }
   if (await slugTaken(env, slug)) return err(409, `"${slug}" is already in use, pick another name`);
+  // Optional settings from the create wizard (same fields as editing later).
+  const settings = await settingsUpdates(env, req, null);
 
   // No accounts, so the spam brake is per network.
   const perDay = parseInt(env.MAX_CREATIONS_PER_DAY || "5", 10);
@@ -622,6 +774,7 @@ async function handleAllocate(request, env, url) {
     created_at: now(),
     expires_at: inDays(RENEW_DAYS),
     max_players: 20, pvp: 1, gamemode: "survival", difficulty: "easy", motd: "", mods: "[]",
+    ram_mb: 4096, port: 25565, whitelist: 0, whitelist_players: "[]", ops: "[]", online_mode: 1, icon: "",
   };
 
   // Insert first: the UNIQUE(slug) constraint settles races between two
@@ -638,6 +791,9 @@ async function handleAllocate(request, env, url) {
     if (/UNIQUE/i.test(String(e))) return err(409, `"${slug}" is already in use, pick another name`);
     throw e;
   }
+
+  await applyUpdates(env, serverId, settings);
+  Object.assign(rec, settings);
 
   // Reserve the branded CNAME (not live until Minekube supports custom domains via API).
   try {
@@ -657,7 +813,7 @@ async function handleAllocate(request, env, url) {
     custom_hostname: rec.custom_hostname,
     connect_endpoint: rec.connect_endpoint,
     manage_key: manageKey, // only ever returned here
-    download: downloadFiles(rec, url.origin, jar, manageURL, webBase(env, url)),
+    download: await downloadFiles(rec, url.origin, jar, manageURL, webBase(env, url)),
   });
 }
 
@@ -684,13 +840,29 @@ async function handleServer(request, env, url, id, sub, modId) {
     return json(await view(env, rec, true));
   }
   if (sub === "mods") return handleMods(request, env, rec, modId);
+  if (sub === "icon" && !modId) {
+    if (request.method === "PUT") {
+      let req;
+      try { req = await readJSON(request); } catch { return err(400, "invalid JSON body"); }
+      if (!validIcon(req?.png)) return err(400, "the icon must be a 64x64 PNG");
+      await env.DB.prepare(`UPDATE servers SET icon = ?1 WHERE server_id = ?2`).bind(req.png, id).run();
+      rec.icon = req.png;
+      return json(await view(env, rec, true));
+    }
+    if (request.method === "DELETE") {
+      await env.DB.prepare(`UPDATE servers SET icon = '' WHERE server_id = ?1`).bind(id).run();
+      rec.icon = "";
+      return json(await view(env, rec, true));
+    }
+    return err(405, "method not allowed");
+  }
   if (modId) return err(404, "not found");
 
   if (sub === "files" && request.method === "POST") {
     if (!(await allow(env, `download:${id}`, 30, 3600))) return err(429, "too many downloads — try again later");
     const jar = await jarSource(rec.loader, rec.mc_version);
     const manageURL = `${webBase(env, url)}/#/manage/${rec.server_id}/${key}`;
-    return json({ server_id: rec.server_id, download: downloadFiles(rec, url.origin, jar, manageURL, webBase(env, url)) });
+    return json({ server_id: rec.server_id, download: await downloadFiles(rec, url.origin, jar, manageURL, webBase(env, url)) });
   }
   if (sub) return err(404, "not found");
 
@@ -700,17 +872,14 @@ async function handleServer(request, env, url, id, sub, modId) {
     let req;
     try { req = await readJSON(request); } catch { return err(400, "invalid JSON body"); }
     if (!req || typeof req !== "object") return err(400, "invalid JSON body");
-    const [updates, e] = parseSettings(req);
-    if (e) return err(400, e);
+    const updates = await settingsUpdates(env, req, rec);
     if ("name" in req) {
       const [name, ne] = cleanName(req.name);
       if (ne) return err(400, ne);
       updates.display_name = name;
     }
-    const cols = Object.keys(updates);
-    if (!cols.length) return err(400, "nothing to change");
-    await env.DB.prepare(`UPDATE servers SET ${cols.map((c, i) => `${c} = ?${i + 1}`).join(", ")} WHERE server_id = ?${cols.length + 1}`)
-      .bind(...cols.map((c) => updates[c]), id).run();
+    if (!Object.keys(updates).length) return err(400, "nothing to change");
+    await applyUpdates(env, id, updates);
     Object.assign(rec, updates);
     return json(await view(env, rec, true));
   }
@@ -792,6 +961,11 @@ async function handleLauncherCheck(request, env, url) {
     mods_folder: modsFolder(rec.loader),
     mods: parseMods(rec).map(({ title, filename, url, sha512 }) => ({ title, filename, url, sha512 })),
     website: webBase(env, url),
+    ram: `${rec.ram_mb || 4096}M`,
+    port: rec.port || 25565,
+    icon_png: rec.icon || "",
+    whitelist: await playerFileEntries(rec, "whitelist_players"),
+    ops: await playerFileEntries(rec, "ops"),
   });
 }
 
@@ -840,6 +1014,31 @@ function handleEula(env) {
   const out = { url: "https://aka.ms/MinecraftEULA" };
   if (env.EULA_TEXT) out.text = env.EULA_TEXT;
   return json(out, 200, { "Cache-Control": "public, max-age=3600" });
+}
+
+// Public: the server's icon (custom, or the MZForge default). Used by the
+// status page and dashboard. Contains nothing secret.
+async function handleIconPNG(request, env, url, id) {
+  const rec = await env.DB.prepare(`SELECT icon FROM servers WHERE server_id = ?1`).bind(id).first();
+  if (rec?.icon) {
+    const bin = Uint8Array.from(atob(rec.icon), (c) => c.charCodeAt(0));
+    return new Response(bin, { headers: { "Content-Type": "image/png", "Cache-Control": "public, max-age=300", ...CORS } });
+  }
+  return Response.redirect(new URL("/default-icon.png", url).toString(), 302);
+}
+
+// Checks a username exists (official accounts) so the website can flag
+// typos in whitelist/admin lists straight away.
+async function handlePlayerLookup(request, env, url) {
+  if (!(await allow(env, `player:${clientIP(request)}`, 60, 60))) return err(429, "slow down");
+  const name = String(url.searchParams.get("name") || "").trim();
+  if (!MC_NAME.test(name)) return json({ found: false, reason: "not a valid Minecraft username" });
+  try {
+    const p = await mojangPlayer(env, name);
+    return p ? json({ found: true, name: p.name }) : json({ found: false, reason: "no Minecraft account with that name" });
+  } catch {
+    return err(502, "couldn't reach Mojang to check that name — try again");
+  }
 }
 
 // ---------------------------------------------------------------- daily cleanup
@@ -897,13 +1096,19 @@ export default {
       if (p === "/modfile" && m === "GET") return await handleModFile(request, env, url);
       if (p === "/launcher/check" && m === "POST") return await handleLauncherCheck(request, env, url);
 
-      const sm = p.match(/^\/servers\/([a-f0-9]{16})(?:\/(files|renew|mods)(?:\/([A-Za-z0-9]{1,16}))?)?$/);
+      const im = p.match(/^\/servers\/([a-f0-9]{16})\/icon\.png$/);
+      if (im && m === "GET") return await handleIconPNG(request, env, url, im[1]);
+      if (p === "/meta/player" && m === "GET") return await handlePlayerLookup(request, env, url);
+
+      const sm = p.match(/^\/servers\/([a-f0-9]{16})(?:\/(files|renew|mods|icon)(?:\/([A-Za-z0-9]{1,16}))?)?$/);
       if (sm) return await handleServer(request, env, url, sm[1], sm[2], sm[3]);
 
       // Anything else: the website (index.html, MZForgeLauncher.exe, ...).
       if (env.ASSETS) return env.ASSETS.fetch(request);
       return err(404, "not found");
     } catch (e) {
+      if (e instanceof UserError) return err(400, e.message);
+      if (/Mojang HTTP/.test(String(e?.message))) return err(502, "couldn't reach Mojang to check player names — try again in a moment");
       console.log(`unhandled error on ${m} ${p}: ${e.stack || e}`);
       return err(500, "something went wrong on our side — try again in a moment");
     }

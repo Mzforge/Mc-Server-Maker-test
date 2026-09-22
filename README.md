@@ -17,6 +17,8 @@ Every change you commit to GitHub goes live automatically.
 | File | What it is |
 |---|---|
 | index.html | the website |
+| logo-64.png, logo-480.webp | the MZForge logo (header, favicon, home page) |
+| default-icon.png | the in-game server icon for servers without their own |
 | MZForgeLauncher.exe | the launcher people download |
 | index.js, mcping.js | the API |
 | wrangler.toml | Cloudflare settings |
@@ -38,10 +40,19 @@ Every change you commit to GitHub goes live automatically.
   required dependencies automatically. Chosen files are included in
   downloads (checked against Modrinth's SHA-512), and the launcher
   downloads newly added ones on start. It never deletes files.
-- **Settings** tab: name, MOTD (with &-colour codes and a live preview),
-  max players, game mode, difficulty, PvP. Written to server.properties in
-  downloads and re-applied by the launcher on every start; other lines in
-  server.properties are left alone.
+- **Create wizard** (Server type, Basics, Appearance, Plugins/Mods,
+  Create) with a live Minecraft-server-list preview. The same options are
+  on each server's Settings and Mods tabs afterwards.
+- **Settings:** RAM (with a recommendation from software, players and
+  add-ons), max players, game mode, difficulty, PvP, whitelist, official or
+  cracked accounts, admins (op), local port, icon and MOTD. Written into the
+  download and re-applied by the launcher on every start. Whitelist/admin
+  names are checked against Mojang; in-game additions are kept.
+- **Icons:** any uploaded picture becomes a 64x64 server-icon.png. Servers
+  without one get the MZForge logo (default-icon.png).
+- **Popular picks** per loader with "Recommended" badges. Geyser and voice
+  chat are deliberately left out: they need UDP ports Minekube's tunnel
+  doesn't carry.
 
 The database upgrades itself: servers created before this version get the
 new settings with defaults and a fresh 30 days.
