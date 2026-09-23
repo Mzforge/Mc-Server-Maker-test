@@ -512,22 +512,33 @@ async function resolveJar(env, loader, version) {
       return url ? { url, filename: `minecraft_server.${version}.jar` } : null;
     }
     if (loader === "paper") {
-      // Newer Fill API first, then the older v2 builds API.
+      // Paper's download block is keyed differently between API versions,
+      // so take whichever entry is a .jar rather than assuming a name.
+      const pick = (downloads) => {
+        const entries = Object.entries(downloads || {});
+        const hit = entries.find(([k]) => k === "server:default") || entries.find(([k]) => k === "application") ||
+          entries.find(([, d]) => String(d?.name || "").endsWith(".jar"));
+        if (!hit) return null;
+        const d = hit[1];
+        return { name: d.name || "", url: d.url || "", sha256: d.checksums?.sha256 || d.sha256 || "" };
+      };
+      // Current Fill API first.
       try {
         const r = await (await fetch(`${bases.paperFill}/v3/projects/paper/versions/${version}/builds/latest`,
-          { headers: { "User-Agent": "MZForge/1.0" }, cf: { cacheTtl: 900, cacheEverything: true } })).json();
-        const d = r?.downloads?.["server:default"] || r?.downloads?.application;
-        if (d?.url?.startsWith("https://")) return { url: d.url, sha256: d.checksums?.sha256 || d.sha256 || "", filename: d.name || `paper-${version}.jar` };
+          { headers: { "User-Agent": "MZForge/1.0 (+https://mzforge.com)" }, cf: { cacheTtl: 900, cacheEverything: true } })).json();
+        const d = pick(r?.downloads);
+        if (d?.url?.startsWith("https://")) return { url: d.url, sha256: d.sha256, filename: d.name || `paper-${version}.jar` };
       } catch { /* fall through to v2 */ }
+      // Older v2 listing.
       const builds = await (await fetch(`${bases.paper}/v2/projects/paper/versions/${version}/builds`,
         { cf: { cacheTtl: 900, cacheEverything: true } })).json();
-      const list = (builds?.builds || []).filter((b) => b.channel === "default");
-      const last = list.pop() || (builds?.builds || []).pop();
-      const app = last?.downloads?.application;
-      if (!app?.name) return null;
+      const all = builds?.builds || [];
+      const last = all.filter((b) => b.channel === "default").pop() || all.pop();
+      const d = pick(last?.downloads);
+      if (!d?.name) return null;
       return {
-        url: `${bases.paper}/v2/projects/paper/versions/${version}/builds/${last.build}/downloads/${app.name}`,
-        sha256: app.sha256 || "", filename: app.name,
+        url: d.url || `${bases.paper}/v2/projects/paper/versions/${version}/builds/${last.build}/downloads/${d.name}`,
+        sha256: d.sha256, filename: d.name,
       };
     }
     if (loader === "fabric") {
