@@ -367,13 +367,12 @@ async function slugTaken(env, slug) {
   return !!r;
 }
 
-// Minekube endpoint names are globally unique, not merely unique inside
-// MZForge. Use the random 64-bit server id rather than the human slug so a
-// user never has to resolve a Minekube name collision manually.
-// Keep endpoint names compact. Minekube accepts short human-readable endpoint names reliably;
-// use 48 bits of the random server id (12 hex chars) for collision resistance while
-// keeping the full endpoint at 16 characters: "mzf-" + 12 hex.
-const headlessEndpoint = (serverId) => `mzf-${String(serverId).slice(0, 12)}`;
+// Minekube documents the endpoint name as a configurable, human-readable
+// identifier and uses it directly in <endpoint>.play.minekube.net. Keep the
+// public address tied to the server slug users chose on MZForge.
+// The "mzf-" namespace prefix greatly reduces collisions with unrelated
+// Minekube endpoints while keeping the address readable.
+const headlessEndpoint = (slug) => `mzf-${String(slug).toLowerCase()}`;
 const minekubeHostname = (endpoint) => `${endpoint}.play.minekube.net`;
 
 // ---------------------------------------------------------------- mods & plugins (Modrinth)
@@ -886,12 +885,11 @@ async function handleAllocate(request, env, url) {
     manage_key_hash: await sha256Hex(manageKey),
     slug,
     display_name: displayName,
-    // Use a compact prefix of the random server id for the Minekube endpoint. Endpoint names are
-    // global across Minekube, so a slug-only name can collide with somebody
-    // outside MZForge. 12 hex chars = 48 random bits while keeping the full
-    // endpoint name short enough for Connect.
-    connect_endpoint: headlessEndpoint(serverId),
-    hostname: minekubeHostname(headlessEndpoint(serverId)),
+    // Use the readable server slug for the Minekube endpoint, as documented
+    // by Minekube. Example: server name/slug "friday" ->
+    // mzf-friday.play.minekube.net.
+    connect_endpoint: headlessEndpoint(slug),
+    hostname: minekubeHostname(headlessEndpoint(slug)),
     custom_hostname: `${slug}.mc.${domain}`,
     loader,
     mc_version: mcVersion,
@@ -1053,13 +1051,18 @@ async function launcherAuth(request, env, serverId) {
   return [rec, null];
 }
 
-// Legacy builds used mzf-<slug>. If such a server never managed to persist a
-// Connect token, move it to a practically collision-free endpoint before Gate
-// starts. Servers that already have a token keep their existing address.
+// A short-lived test build used mzf-<random hex> endpoint names. Minekube's
+// documented model is a configurable human-readable endpoint name, so migrate
+// only those generated numeric endpoints back to mzf-<server-slug>. Changing
+// an endpoint requires a fresh endpoint token, therefore the old token is
+// deliberately cleared during this one-time migration. Human-readable legacy
+// endpoints (for example mzf-friday) are left untouched.
 async function ensureHeadlessEndpoint(env, rec) {
-  if (rec.connect_token) return rec;
-  const endpoint = headlessEndpoint(rec.server_id);
+  const endpoint = headlessEndpoint(rec.slug);
   const hostname = minekubeHostname(endpoint);
+  const oldGeneratedEndpoint = /^mzf-[0-9a-f]{12,16}$/i.test(String(rec.connect_endpoint || ""));
+
+  if (!oldGeneratedEndpoint) return rec;
   if (rec.connect_endpoint === endpoint && rec.hostname === hostname) return rec;
 
   // The branded CNAME is not required for the raw Minekube address, so a DNS
@@ -1069,10 +1072,11 @@ async function ensureHeadlessEndpoint(env, rec) {
   } catch (e) {
     console.log(`endpoint migration ${rec.server_id}: CNAME update failed: ${e.message}`);
   }
-  await env.DB.prepare(`UPDATE servers SET connect_endpoint = ?1, hostname = ?2 WHERE server_id = ?3 AND connect_token = ''`)
+  await env.DB.prepare(`UPDATE servers SET connect_endpoint = ?1, hostname = ?2, connect_token = '' WHERE server_id = ?3`)
     .bind(endpoint, hostname, rec.server_id).run();
   rec.connect_endpoint = endpoint;
   rec.hostname = hostname;
+  rec.connect_token = "";
   return rec;
 }
 

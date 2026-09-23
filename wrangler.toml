@@ -18,7 +18,7 @@ database_name = "mzforge"
 
 [vars]
 MZFORGE_DOMAIN = "mzforge.com"
-MAX_CREATIONS_PER_DAY = "5"
+MAX_CREATIONS_PER_DAY = "100"
 
 [observability]
 enabled = true

@@ -1353,7 +1353,7 @@ async function viewCreate() {
 
   const steps = () => ["Server type", "Basics", "Appearance", cfg.loader === "fabric" ? "Mods" : cfg.loader === "paper" ? "Plugins" : "Add-ons", "Create"];
   let slugTimer, slugSeq = 0;
-  const previewAddr = v => v ? `MZForge will assign a private tunnel address automatically when you create <b>${esc(v)}</b>.` : `MZForge assigns the public join address automatically — no Minekube setup.`;
+  const previewAddr = v => v ? `Your join address will be <b>mzf-${esc(v)}.play.minekube.net</b>. MZForge handles Minekube automatically.` : `Choose a server name and MZForge will use it in your public join address.`;
   const followRam = () => { if (!cfg.ramTouched) cfg.ram_mb = recommendRam(cfg.loader, cfg.max_players, cfg.addons.length); };
   const updatePreview = () => { const p = $("preview-slot"); if (p) p.innerHTML = previewCardHTML(cfg); };
 
@@ -1898,7 +1898,7 @@ function viewHelp(anchor) {
 
         <section id="h-branded"><h2>The .mc.mzforge.com address</h2>
           <p>Each server reserves a name like yourname.mc.mzforge.com. It's set up on our side but isn't live yet: Minekube currently needs a manual step for every custom domain, and there's no way for us to automate it. We're working with them on that.</p>
-          <p>Until then, share the unique address shown on your server page. It starts with <b>mzf-</b> and ends in <b>play.minekube.net</b>. MZForge creates and remembers its tunnel identity automatically.</p></section>
+          <p>Until then, share the address shown on your server page, for example <b>mzf-friday.play.minekube.net</b>. The readable part comes from the server name you chose, and MZForge remembers its tunnel identity automatically.</p></section>
 
         <section id="h-world"><h2>Your world and backups</h2>
           <p>Everything lives in the folder you unzipped: the world, settings, plugins, and mods. To back it up, stop the launcher and copy the folder. Deleting a server on this site doesn't touch those files.</p>

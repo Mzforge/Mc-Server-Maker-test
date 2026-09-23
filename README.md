@@ -87,3 +87,14 @@ new settings with defaults and a fresh 30 days.
 - **Deploy error about "database_id"?** Storage & Databases → D1 → Create,
   name it `mzforge`, copy its ID, and add `database_id = "the-id"` under
   `database_name = "mzforge"` in wrangler.toml.
+
+
+## Readable Minekube endpoints
+
+MZForge uses the server slug as the Connect endpoint. A server created as
+`friday` uses `mzf-friday.play.minekube.net`. Minekube documents endpoint
+names as configurable human-readable identifiers; MZForge adds the `mzf-`
+prefix to reduce collisions with unrelated endpoints. The launcher persists
+the endpoint token automatically, checks reachability from both the local PC
+and the Worker, waits through Minekube's documented propagation window, and
+restarts Gate once automatically if the route still has not appeared.
