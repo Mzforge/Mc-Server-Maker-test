@@ -868,7 +868,7 @@ async function handleAllocate(request, env, url) {
   const settings = await settingsUpdates(env, req, null);
 
   // No accounts, so the spam brake is per network.
-  const perDay = parseInt(env.MAX_CREATIONS_PER_DAY || "5", 10);
+  const perDay = parseInt(env.MAX_CREATIONS_PER_DAY || "100", 10);
   if (!(await allow(env, `create:${clientIP(request)}`, perDay, 86400))) {
     return err(429, "too many servers created from this network today — try again tomorrow");
   }
