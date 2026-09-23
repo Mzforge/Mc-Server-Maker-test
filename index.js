@@ -48,6 +48,9 @@ const ADDED_COLUMNS = {
   gamemode: `TEXT NOT NULL DEFAULT 'survival'`,
   difficulty: `TEXT NOT NULL DEFAULT 'easy'`,
   mods: `TEXT NOT NULL DEFAULT '[]'`,
+  view_distance: `INTEGER NOT NULL DEFAULT 10`,
+  simulation_distance: `INTEGER NOT NULL DEFAULT 10`,
+  connect_token: `TEXT NOT NULL DEFAULT ''`,
   ram_mb: `INTEGER NOT NULL DEFAULT 4096`,
   port: `INTEGER NOT NULL DEFAULT 25565`,
   whitelist: `INTEGER NOT NULL DEFAULT 0`,
@@ -194,6 +197,17 @@ function parseSettings(req) {
     if (!DIFFICULTIES.has(req.difficulty)) return [null, "difficulty must be peaceful, easy, normal, or hard"];
     u.difficulty = req.difficulty;
   }
+  for (const [field, min, max] of [["view_distance", 3, 32], ["simulation_distance", 3, 32]]) {
+    if (!(field in req)) continue;
+    const n = Number(req[field]);
+    if (!Number.isInteger(n) || n < min || n > max) return [null, `${field.replace("_", " ")} must be a whole number from ${min} to ${max}`];
+    u[field] = n;
+  }
+  if ("connect_token" in req) {
+    const t = String(req.connect_token ?? "").trim();
+    if (t && !/^[\w.\-]{8,300}$/.test(t)) return [null, "that doesn't look like a Minekube Connect token"];
+    u.connect_token = t;
+  }
   if ("ram_mb" in req) {
     const n = Number(req.ram_mb);
     if (!Number.isInteger(n) || n < 1024 || n > 32768 || n % 256 !== 0) return [null, "memory must be between 1 GB and 32 GB"];
@@ -326,9 +340,16 @@ function managedProperties(rec) {
     gamemode: rec.gamemode,
     difficulty: rec.difficulty,
     "server-port": String(rec.port || 25565),
-    "online-mode": rec.online_mode ? "true" : "false",
+    "view-distance": String(rec.view_distance || 10),
+    "simulation-distance": String(rec.simulation_distance || 10),
     "white-list": rec.whitelist ? "true" : "false",
     "enforce-whitelist": rec.whitelist ? "true" : "false",
+    // Minecraft sits behind Gate (the Minekube Connect tunnel), and Gate
+    // does the account checking. Minekube's docs require the backend
+    // itself to be offline-mode with secure-profile enforcement off;
+    // whether real accounts are required is set on Gate instead.
+    "online-mode": "false",
+    "enforce-secure-profile": "false",
   };
 }
 
@@ -680,6 +701,9 @@ async function view(env, rec, owned) {
       ram_mb: rec.ram_mb,
       port: rec.port,
       whitelist: !!rec.whitelist,
+      view_distance: rec.view_distance,
+      simulation_distance: rec.simulation_distance,
+      connect_token: rec.connect_token || "",
       whitelist_players: parseList(rec.whitelist_players).map((p) => p.name),
       ops: parseList(rec.ops).map((p) => p.name),
       online_mode: !!rec.online_mode,
@@ -704,7 +728,8 @@ async function downloadFiles(rec, apiBase, jar, manageURL, webURL) {
     `server-id=${rec.server_id}\nserver-token=${rec.server_token}\nhostname=${rec.hostname}\nmc-port=${rec.port || 25565}\n` +
     `ram=${rec.ram_mb || 4096}M\n` +
     `api-base=${apiBase}\nconnect-endpoint=${rec.connect_endpoint}\nloader=${rec.loader}\nmc-version=${rec.mc_version}\n` +
-    `renew-url=${manageURL}\nweb-url=${webURL}\n`;
+    `renew-url=${manageURL}\nweb-url=${webURL}\n` +
+    `online-mode=${rec.online_mode ? "true" : "false"}\n`;
   const mods = parseMods(rec);
   const folder = modsFolder(rec.loader);
   const modsNote = mods.length
@@ -763,6 +788,7 @@ your server page. The launcher applies them each time it starts.
   const extra = {};
   const wl = await playerFileEntries(rec, "whitelist_players");
   const ops = await playerFileEntries(rec, "ops");
+  if (rec.connect_token) extra["connect.json"] = JSON.stringify({ token: rec.connect_token }, null, 2);
   if (wl.length) extra["whitelist.json"] = JSON.stringify(wl, null, 2);
   if (ops.length) extra["ops.json"] = JSON.stringify(ops, null, 2);
   return {
@@ -857,6 +883,7 @@ async function handleAllocate(request, env, url) {
     created_at: now(),
     expires_at: inDays(RENEW_DAYS),
     max_players: 20, pvp: 1, gamemode: "survival", difficulty: "easy", motd: "", mods: "[]",
+    view_distance: 10, simulation_distance: 10, connect_token: "",
     ram_mb: 4096, port: 25565, whitelist: 0, whitelist_players: "[]", ops: "[]", online_mode: 1, icon: "",
   };
 
@@ -1045,6 +1072,8 @@ async function handleLauncherCheck(request, env, url) {
     mods: parseMods(rec).map(({ title, filename, url, sha512 }) => ({ title, filename, url, sha512 })),
     website: webBase(env, url),
     ram: `${rec.ram_mb || 4096}M`,
+    online_mode: !!rec.online_mode,   // Gate enforces this, not server.properties
+    connect_token: rec.connect_token || "",
     port: rec.port || 25565,
     icon_png: rec.icon || "",
     whitelist: await playerFileEntries(rec, "whitelist_players"),

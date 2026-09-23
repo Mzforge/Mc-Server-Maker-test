@@ -968,6 +968,7 @@ function previewCardHTML(cfg) {
       <dt>Version</dt><dd>${esc(cfg.version || cfg.mc_version || "")}</dd>
       <dt>Memory</dt><dd>${esc(gbLabel(cfg.ram_mb))}</dd>
       <dt>Mode</dt><dd>${esc(modeLabel)}${cfg.difficulty ? `, ${esc(cfg.difficulty)}` : ""}</dd>
+      <dt>Render distance</dt><dd>${esc(cfg.view_distance ?? 10)} chunks</dd>
       <dt>Who can join</dt><dd>${cfg.whitelist ? "Whitelist" : "Anyone"}${cfg.online_mode ? "" : ", cracked"}</dd>
     </dl>
     ${MOD_LOADERS[cfg.loader] ? `<span class="chip">${n} ${addonWord(cfg.loader, n !== 1)}</span>` : ""}
@@ -1024,7 +1025,18 @@ function basicsHTML(cfg) {
     <div class="field"><span class="label">Admins (op)</span>
       <div class="names" id="b-ops">${namesHTML("ops", cfg.ops, "Your Minecraft username")}</div>
       <div class="hint">Admins can use commands like /gamemode and /whitelist in-game. Add yourself so you can manage your server.</div></div>
+    <div class="settings-grid">
+      <div class="field"><label for="b-view">Render distance</label>
+        <input id="b-view" type="text" inputmode="numeric" value="${esc(cfg.view_distance ?? 10)}">
+        <div class="hint" id="b-viewhint">${viewHint(cfg)}</div></div>
+      <div class="field"><label for="b-sim">Simulation distance</label>
+        <input id="b-sim" type="text" inputmode="numeric" value="${esc(cfg.simulation_distance ?? 10)}">
+        <div class="hint">How far away things keep ticking (mobs, crops, redstone). Lower saves more than render distance. 3-32.</div></div>
+    </div>
     <details class="field"><summary class="label" style="cursor:pointer">Advanced</summary>
+      <div class="field" style="margin-top:10px"><label for="b-token">Minekube Connect token</label>
+        <input id="b-token" type="text" autocomplete="off" spellcheck="false" value="${esc(cfg.connect_token || "")}" placeholder="Only needed if the launcher asks for one">
+        <div class="hint">Minekube runs the tunnel that carries players to your PC. If the launcher says the tunnel was refused, sign in at <a href="https://app.minekube.com" target="_blank" rel="noopener">app.minekube.com</a>, create an endpoint named exactly <b>mzf-${esc(cfg.slug || "yourname")}</b>, and paste its token here.</div></div>
       <div class="field" style="margin-top:10px"><label for="b-port">Local port</label>
         <input id="b-port" type="text" inputmode="numeric" value="${esc(cfg.port)}" style="max-width:180px">
         <div class="hint">The port Minecraft uses on your own PC. Leave it at 25565 unless another server on this PC already uses it. Friends never need it.</div></div>
@@ -1036,6 +1048,14 @@ function ramHint(cfg) {
   const dev = navigator.deviceMemory ? ` This device reports at least ${navigator.deviceMemory} GB.` : "";
   const extra = addons ? `, ${addons} ${addonWord(cfg.loader, addons !== 1)}` : "";
   return `Recommended: ${gbLabel(rec)} for ${esc(loaderName(cfg.loader))} with ${esc(cfg.max_players)} players${esc(extra)}. Keep it under about 60% of your PC's total memory.${dev}`;
+}
+// Render distance is the single biggest lever on memory and lag.
+function viewHint(cfg) {
+  const v = cfg.view_distance ?? 10;
+  const note = v >= 16 ? `<span class="warn-text">${v} chunks is demanding: expect noticeably more memory and lag with several players.</span>`
+    : v <= 6 ? "Very light on your PC, but players see less around them."
+    : "A good balance. Minecraft's own default is 10.";
+  return `How far players can see, in chunks (3-32). ${note}`;
 }
 function playersHint(cfg) {
   const ok = comfortablePlayers(cfg.loader, cfg.ram_mb, cfg.addons?.length || 0);
@@ -1096,6 +1116,16 @@ function wireBasics(root, cfg, onChange) {
     onChange();
   });
   root.querySelector("#b-port").oninput = e => { const n = parseInt(e.target.value, 10); if (n >= 1024 && n <= 65535) cfg.port = n; };
+  const token = root.querySelector("#b-token");
+  if (token) token.oninput = e => cfg.connect_token = e.target.value.trim();
+  root.querySelector("#b-view").oninput = e => {
+    const n = parseInt(e.target.value, 10);
+    if (n >= 3 && n <= 32) { cfg.view_distance = n; root.querySelector("#b-viewhint").innerHTML = viewHint(cfg); onChange(); }
+  };
+  root.querySelector("#b-sim").oninput = e => {
+    const n = parseInt(e.target.value, 10);
+    if (n >= 3 && n <= 32) { cfg.simulation_distance = n; onChange(); }
+  };
   for (const [key, field] of [["wl", "whitelist_players"], ["ops", "ops"]]) {
     const list = root.querySelector(`[data-names="${key}"]`), form = root.querySelector(`[data-addname="${key}"]`);
     const msg = root.querySelector(`[data-namemsg="${key}"]`);
@@ -1294,6 +1324,8 @@ function settingsPayload(cfg) {
     name: cfg.name, motd: cfg.motd, max_players: cfg.max_players, pvp: !!cfg.pvp, gamemode: cfg.gamemode,
     difficulty: cfg.difficulty, ram_mb: cfg.ram_mb, port: cfg.port, whitelist: !!cfg.whitelist,
     whitelist_players: cfg.whitelist_players, ops: cfg.ops, online_mode: !!cfg.online_mode,
+    view_distance: cfg.view_distance ?? 10, simulation_distance: cfg.simulation_distance ?? 10,
+    connect_token: cfg.connect_token || "",
   };
 }
 
@@ -1315,6 +1347,7 @@ async function viewCreate() {
     step: 0, name: "", slug: "", slugEdited: false, slugOK: false, loader: "paper", version: "", versions: [], eula: null, accepted: false,
     max_players: 10, ram_mb: 0, ramTouched: false, port: 25565, pvp: true, gamemode: "survival", difficulty: "normal",
     whitelist: false, whitelist_players: [], ops: [], online_mode: true, motd: "", iconPNG: "", addons: [],
+    view_distance: 10, simulation_distance: 10, connect_token: "",
   };
   cfg.ram_mb = recommendRam(cfg.loader, cfg.max_players, 0);
   $app.innerHTML = `<div class="wrap"><p class="muted">Loading…</p></div>`;
@@ -1776,7 +1809,7 @@ function viewHelp(anchor) {
   const toc = [
     ["how", "How MZForge works"], ["manage", "No account? How managing works"], ["renew", "Keeping your address (30 days)"], ["needs", "What you need"], ["server-jar", "The server file and Java"],
     ["running", "Running your server"], ["antivirus", "Windows and antivirus warnings"],
-    ["mods", "Mods and plugins"], ["settings", "Server settings"], ["troubleshooting", "Friends can't join"], ["branded", "The .mc.mzforge.com address"], ["world", "Your world and backups"],
+    ["mods", "Mods and plugins"], ["tunnel", "If the tunnel is refused"], ["settings", "Server settings"], ["troubleshooting", "Friends can't join"], ["branded", "The .mc.mzforge.com address"], ["world", "Your world and backups"],
   ];
   $app.innerHTML = `
   <div class="wrap">
@@ -1851,12 +1884,23 @@ function viewHelp(anchor) {
           </ul>
           <p>The launcher applies your settings each time it starts, so restart it after changing them. Players you add in-game with /whitelist add or /op are kept. Other lines in server.properties are yours to edit.</p></section>
 
+        <section id="h-tunnel"><h2>If the tunnel is refused</h2>
+          <p>Players reach your PC through <a href="https://connect.minekube.com" target="_blank" rel="noopener">Minekube Connect</a>, a free tunnel network. If the launcher says Minekube isn't accepting the registration, that endpoint needs its own Connect token:</p>
+          <ol>
+            <li>Sign in at <a href="https://app.minekube.com" target="_blank" rel="noopener">app.minekube.com</a> (free).</li>
+            <li>Create an endpoint named exactly the address name the launcher shows, for example <b>mzf-yourname</b>.</li>
+            <li>Copy the token it gives you.</li>
+            <li>On your server's Settings tab, open <b>Advanced</b>, paste it into <b>Minekube Connect token</b>, and save.</li>
+            <li>Start the launcher again. It writes the token where Gate expects it and registers the tunnel.</li>
+          </ol>
+          <p>The token is only for your own endpoint, and it's only ever written into your own server folder.</p></section>
+
         <section id="h-troubleshooting"><h2>Friends can't join</h2>
           <ul>
             <li><b>Your server page says Offline.</b> The launcher isn't running, the PC is asleep, or it lost its internet connection. Start the launcher again.</li>
             <li><b>It says Online, but a friend can't connect.</b> Check they pasted the full address and are on the same Minecraft version as the server.</li>
             <li><b>"Outdated client" or "Outdated server".</b> Their game version doesn't match. They can pick a version in the Minecraft Launcher's Installations tab.</li>
-            <li><b>The launcher says the public address isn't answering.</b> Wait a minute and restart the launcher. Minekube's network occasionally takes a moment to register a new server.</li>
+            <li><b>The launcher says the public address isn't answering.</b> Wait a minute and restart the launcher. Minekube's network occasionally takes a moment to register a new server. If it keeps failing, see <a href="#/help/tunnel">If the tunnel is refused</a>.</li>
             <li><b>A friend plays Bedrock</b> (phone, console, or the Windows Bedrock app). MZForge servers are Java Edition only for now.</li>
           </ul></section>
 

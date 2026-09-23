@@ -53,6 +53,12 @@ Every change you commit to GitHub goes live automatically.
   PaperMC or FabricMC, resolved by the Worker and checksum-verified) and,
   if the PC lacks the right Java, a private Temurin runtime into a
   `runtime` folder. Downloads are restricted to those vendors' own hosts.
+- **Minecraft behind Gate:** per Minekube's connector docs, the backend
+  runs `online-mode=false` + `enforce-secure-profile=false` and Gate
+  (standard mode, not Lite) does the account checking, driven by the
+  account type set on the website. An optional per-server Connect token is
+  written to `connect.json`; the launcher explains how to get one if
+  Minekube refuses the registration.
 - **Appearance:** server name and an optional second line, each with a
   Minecraft colour, shown live in a server-list preview. Stored as one
   motd with colour codes and a newline.
