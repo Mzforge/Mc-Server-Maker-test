@@ -51,7 +51,6 @@ const ADDED_COLUMNS = {
   view_distance: `INTEGER NOT NULL DEFAULT 10`,
   simulation_distance: `INTEGER NOT NULL DEFAULT 10`,
   connect_token: `TEXT NOT NULL DEFAULT ''`,
-  probe_fails: `INTEGER NOT NULL DEFAULT 0`,
   ram_mb: `INTEGER NOT NULL DEFAULT 4096`,
   port: `INTEGER NOT NULL DEFAULT 25565`,
   whitelist: `INTEGER NOT NULL DEFAULT 0`,
@@ -203,11 +202,6 @@ function parseSettings(req) {
     const n = Number(req[field]);
     if (!Number.isInteger(n) || n < min || n > max) return [null, `${field.replace("_", " ")} must be a whole number from ${min} to ${max}`];
     u[field] = n;
-  }
-  if ("connect_token" in req) {
-    const t = String(req.connect_token ?? "").trim();
-    if (t && !/^[\w.\-]{8,300}$/.test(t)) return [null, "that doesn't look like a Minekube Connect token"];
-    u.connect_token = t;
   }
   if ("ram_mb" in req) {
     const n = Number(req.ram_mb);
@@ -372,6 +366,12 @@ async function slugTaken(env, slug) {
   ).bind(slug).first();
   return !!r;
 }
+
+// Minekube endpoint names are globally unique, not merely unique inside
+// MZForge. Use the random 64-bit server id rather than the human slug so a
+// user never has to resolve a Minekube name collision manually.
+const headlessEndpoint = (serverId) => `mzf-${serverId}`;
+const minekubeHostname = (endpoint) => `${endpoint}.play.minekube.net`;
 
 // ---------------------------------------------------------------- mods & plugins (Modrinth)
 //
@@ -628,6 +628,17 @@ async function cfCreateCNAME(env, name, target, comment) {
   return r.result.id;
 }
 
+async function cfUpdateCNAME(env, id, name, target, comment) {
+  if (testMode(env) || !id || id === "test-mode-no-record") return;
+  const res = await fetch(`https://api.cloudflare.com/client/v4/zones/${env.CF_ZONE_ID}/dns_records/${id}`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${env.CF_API_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "CNAME", name, content: target, ttl: 1, proxied: false, comment }),
+  });
+  const r = await res.json().catch(() => ({}));
+  if (!r.success) throw new Error(r.errors?.[0]?.message || `Cloudflare HTTP ${res.status}`);
+}
+
 async function cfDeleteRecord(env, id) {
   if (testMode(env) || !id || id === "test-mode-no-record") return;
   const res = await fetch(`https://api.cloudflare.com/client/v4/zones/${env.CF_ZONE_ID}/dns_records/${id}`, {
@@ -659,26 +670,18 @@ async function liveStatus(env, rec) {
   if (Date.now() - rec.checked_at < 30_000 && rec.live_status) {
     return { status: rec.live_status, version: rec.live_version };
   }
-  // Minekube's edge can be slow to answer, especially for a newly
-  // registered endpoint, so: a generous timeout, and one failed ping isn't
-  // enough to call a server offline — two in a row are.
-  let status = "offline", version = "", fails = (rec.probe_fails || 0) + 1;
+  let status = "offline", version = "";
   try {
-    const r = await mcPing(rec.hostname, 25565, 10000);
+    const r = await mcPing(rec.hostname, 25565, 4000);
     if (!rec.verified_version || r.versionName === rec.verified_version) {
       status = "online";
       version = r.versionName;
-      fails = 0;
     }
   } catch (e) {
-    if (e.unreachableFromWorkers) { status = "online"; version = rec.verified_version; fails = 0; }
+    if (e.unreachableFromWorkers) { status = "online"; version = rec.verified_version; }
   }
-  if (status === "offline" && fails < 2) {
-    status = "online"; // still trusting the launcher's own report for now
-    version = rec.verified_version;
-  }
-  await env.DB.prepare(`UPDATE servers SET live_status = ?1, live_version = ?2, checked_at = ?3, probe_fails = ?4 WHERE server_id = ?5`)
-    .bind(status, version, Date.now(), fails, rec.server_id).run();
+  await env.DB.prepare(`UPDATE servers SET live_status = ?1, live_version = ?2, checked_at = ?3 WHERE server_id = ?4`)
+    .bind(status, version, Date.now(), rec.server_id).run();
   return { status, version };
 }
 
@@ -712,7 +715,6 @@ async function view(env, rec, owned) {
       whitelist: !!rec.whitelist,
       view_distance: rec.view_distance,
       simulation_distance: rec.simulation_distance,
-      connect_token: rec.connect_token || "",
       whitelist_players: parseList(rec.whitelist_players).map((p) => p.name),
       ops: parseList(rec.ops).map((p) => p.name),
       online_mode: !!rec.online_mode,
@@ -881,10 +883,11 @@ async function handleAllocate(request, env, url) {
     manage_key_hash: await sha256Hex(manageKey),
     slug,
     display_name: displayName,
-    // The join address is built from the chosen name. The "mzf-" prefix keeps
-    // us clear of names other Minekube users pick. serverId stays random.
-    connect_endpoint: `mzf-${slug}`,
-    hostname: `mzf-${slug}.play.minekube.net`,
+    // Use the random server id for the Minekube endpoint. Endpoint names are
+    // global across Minekube, so a slug-only name can collide with somebody
+    // outside MZForge and would force the user to touch Minekube manually.
+    connect_endpoint: headlessEndpoint(serverId),
+    hostname: minekubeHostname(headlessEndpoint(serverId)),
     custom_hostname: `${slug}.mc.${domain}`,
     loader,
     mc_version: mcVersion,
@@ -1046,6 +1049,57 @@ async function launcherAuth(request, env, serverId) {
   return [rec, null];
 }
 
+// Legacy builds used mzf-<slug>. If such a server never managed to persist a
+// Connect token, move it to a practically collision-free endpoint before Gate
+// starts. Servers that already have a token keep their existing address.
+async function ensureHeadlessEndpoint(env, rec) {
+  if (rec.connect_token) return rec;
+  const endpoint = headlessEndpoint(rec.server_id);
+  const hostname = minekubeHostname(endpoint);
+  if (rec.connect_endpoint === endpoint && rec.hostname === hostname) return rec;
+
+  // The branded CNAME is not required for the raw Minekube address, so a DNS
+  // update failure must never stop the server from migrating and starting.
+  try {
+    await cfUpdateCNAME(env, rec.cf_record_id, rec.custom_hostname, hostname, `MZForge server ${rec.server_id}`);
+  } catch (e) {
+    console.log(`endpoint migration ${rec.server_id}: CNAME update failed: ${e.message}`);
+  }
+  await env.DB.prepare(`UPDATE servers SET connect_endpoint = ?1, hostname = ?2 WHERE server_id = ?3 AND connect_token = ''`)
+    .bind(endpoint, hostname, rec.server_id).run();
+  rec.connect_endpoint = endpoint;
+  rec.hostname = hostname;
+  return rec;
+}
+
+// Headless token persistence. Gate generates connect.json automatically for a
+// new endpoint; the launcher sends that token here using its per-server secret.
+// Users never need a Minekube account, dashboard, or manual token field.
+async function handleLauncherConnectToken(request, env) {
+  let req;
+  try { req = await readJSON(request); } catch { return err(400, "invalid JSON body"); }
+  const [rec, fail] = await launcherAuth(request, env, req?.server_id);
+  if (fail) return fail;
+  const endpoint = String(req?.connect_endpoint || "").trim();
+  const token = String(req?.connect_token || "").trim();
+  if (endpoint !== rec.connect_endpoint) return err(409, "endpoint changed; refresh server settings and retry");
+  if (!/^[A-Za-z0-9._-]{8,300}$/.test(token)) return err(400, "invalid Connect token");
+  if (rec.connect_token && !safeEqual(rec.connect_token, token)) {
+    return err(409, "this server already has a different endpoint token");
+  }
+  if (!rec.connect_token) {
+    const saved = await env.DB.prepare(`UPDATE servers SET connect_token = ?1 WHERE server_id = ?2 AND connect_token = ''`)
+      .bind(token, rec.server_id).run();
+    if (!(saved.meta?.changes > 0)) {
+      const latest = await env.DB.prepare(`SELECT connect_token FROM servers WHERE server_id = ?1`).bind(rec.server_id).first();
+      if (!latest?.connect_token || !safeEqual(latest.connect_token, token)) {
+        return err(409, "this server already has a different endpoint token");
+      }
+    }
+  }
+  return noContent();
+}
+
 async function handleAnnounce(request, env) {
   let req;
   try { req = await readJSON(request); } catch { return err(400, "invalid JSON body"); }
@@ -1057,7 +1111,7 @@ async function handleAnnounce(request, env) {
   await env.DB.prepare(
     `UPDATE servers SET status = ?1, last_seen = ?2,
        verified_version = CASE WHEN ?3 != '' THEN ?3 ELSE verified_version END,
-       checked_at = 0, live_status = '', probe_fails = 0,
+       checked_at = 0, live_status = '',
        expires_at = CASE WHEN ?1 = 'online' AND expires_at > ?2 AND expires_at < ?5 THEN ?5 ELSE expires_at END
      WHERE server_id = ?4`
   ).bind(req.status, now(), String(req.verified_version || ""), rec.server_id, inDays(RENEW_DAYS)).run();
@@ -1070,9 +1124,10 @@ async function handleAnnounce(request, env) {
 async function handleLauncherCheck(request, env, url) {
   let req;
   try { req = await readJSON(request); } catch { return err(400, "invalid JSON body"); }
-  const [rec, fail] = await launcherAuth(request, env, req?.server_id);
+  let [rec, fail] = await launcherAuth(request, env, req?.server_id);
   if (fail) return fail.status === 404 ? err(404, "this server no longer exists: it was deleted, or expired and was removed") : fail;
   if (isExpired(rec)) return json({ error: "expired", expired: true, expires_at: rec.expires_at }, 403);
+  rec = await ensureHeadlessEndpoint(env, rec);
   return json({
     expires_at: rec.expires_at,
     days_left: daysLeft(rec),
@@ -1083,6 +1138,8 @@ async function handleLauncherCheck(request, env, url) {
     ram: `${rec.ram_mb || 4096}M`,
     online_mode: !!rec.online_mode,   // Gate enforces this, not server.properties
     connect_token: rec.connect_token || "",
+    hostname: rec.hostname,
+    connect_endpoint: rec.connect_endpoint,
     port: rec.port || 25565,
     icon_png: rec.icon || "",
     whitelist: await playerFileEntries(rec, "whitelist_players"),
@@ -1115,7 +1172,7 @@ async function handleSlugAvailable(request, env, url) {
   const problem = slugProblem(slug);
   if (problem) return json({ slug, available: false, reason: problem });
   if (await slugTaken(env, slug)) return json({ slug, available: false, reason: "already taken" });
-  return json({ slug, available: true, join_address: `mzf-${slug}.play.minekube.net` });
+  return json({ slug, available: true, join_address: null });
 }
 
 async function handleVersions() {
@@ -1219,6 +1276,7 @@ export default {
       if (p === "/meta/mode" && m === "GET") return json({ test_mode: testMode(env) });
       if (p === "/modfile" && m === "GET") return await handleModFile(request, env, url);
       if (p === "/launcher/check" && m === "POST") return await handleLauncherCheck(request, env, url);
+      if (p === "/launcher/connect-token" && m === "POST") return await handleLauncherConnectToken(request, env);
 
       const im = p.match(/^\/servers\/([a-f0-9]{16})\/icon\.png$/);
       if (im && m === "GET") return await handleIconPNG(request, env, url, im[1]);
