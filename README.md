@@ -48,6 +48,14 @@ Every change you commit to GitHub goes live automatically.
   cracked accounts, admins (op), local port, icon and MOTD. Written into the
   download and re-applied by the launcher on every start. Whitelist/admin
   names are checked against Mojang; in-game additions are kept.
+- **Nothing to install by hand.** On its first run the launcher downloads
+  the official server file for the chosen loader and version (Mojang,
+  PaperMC or FabricMC, resolved by the Worker and checksum-verified) and,
+  if the PC lacks the right Java, a private Temurin runtime into a
+  `runtime` folder. Downloads are restricted to those vendors' own hosts.
+- **Appearance:** server name and an optional second line, each with a
+  Minecraft colour, shown live in a server-list preview. Stored as one
+  motd with colour codes and a newline.
 - **Icons:** any uploaded picture becomes a 64x64 server-icon.png. Servers
   without one get the MZForge logo (default-icon.png).
 - **Popular picks** per loader with "Recommended" badges. Geyser and voice

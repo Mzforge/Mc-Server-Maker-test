@@ -169,8 +169,12 @@ const DIFFICULTIES = new Set(["peaceful", "easy", "normal", "hard"]);
 function parseSettings(req) {
   const u = {};
   if ("motd" in req) {
-    const motd = String(req.motd ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").trim();
-    if ([...motd].length > 120) return [null, "description must be 120 characters or fewer"];
+    // Minecraft shows at most two lines, so keep real newlines (they become
+    // \u000a in server.properties) but drop every other control character.
+    const lines = String(req.motd ?? "").replace(/\r\n?/g, "\n").split("\n").slice(0, 2)
+      .map((l) => l.replace(/[\u0000-\u001f\u007f]/g, " ").trim());
+    const motd = lines.join("\n").trim();
+    if ([...motd].length > 140) return [null, "description must be 140 characters or fewer"];
     u.motd = motd;
   }
   if ("max_players" in req) {
@@ -493,18 +497,83 @@ function javaRequirement(version) {
   return "Java 8";
 }
 
-async function jarSource(loader, version) {
-  const js = { loader, version, java: javaRequirement(version) };
+// resolveJar finds the official download for a loader + version, so the
+// launcher can fetch server.jar itself on first run. We never re-host these
+// files: the URLs point at Mojang, PaperMC and FabricMC themselves.
+async function resolveJar(env, loader, version) {
+  const bases = {
+    paper: env.PAPER_API || "https://api.papermc.io",
+    paperFill: env.PAPER_FILL_API || "https://fill.papermc.io",
+    fabric: env.FABRIC_META || "https://meta.fabricmc.net",
+  };
+  try {
+    if (loader === "vanilla") {
+      const url = await vanillaJarURL(version);
+      return url ? { url, filename: `minecraft_server.${version}.jar` } : null;
+    }
+    if (loader === "paper") {
+      // Newer Fill API first, then the older v2 builds API.
+      try {
+        const r = await (await fetch(`${bases.paperFill}/v3/projects/paper/versions/${version}/builds/latest`,
+          { headers: { "User-Agent": "MZForge/1.0" }, cf: { cacheTtl: 900, cacheEverything: true } })).json();
+        const d = r?.downloads?.["server:default"] || r?.downloads?.application;
+        if (d?.url?.startsWith("https://")) return { url: d.url, sha256: d.checksums?.sha256 || d.sha256 || "", filename: d.name || `paper-${version}.jar` };
+      } catch { /* fall through to v2 */ }
+      const builds = await (await fetch(`${bases.paper}/v2/projects/paper/versions/${version}/builds`,
+        { cf: { cacheTtl: 900, cacheEverything: true } })).json();
+      const list = (builds?.builds || []).filter((b) => b.channel === "default");
+      const last = list.pop() || (builds?.builds || []).pop();
+      const app = last?.downloads?.application;
+      if (!app?.name) return null;
+      return {
+        url: `${bases.paper}/v2/projects/paper/versions/${version}/builds/${last.build}/downloads/${app.name}`,
+        sha256: app.sha256 || "", filename: app.name,
+      };
+    }
+    if (loader === "fabric") {
+      const loaders = await (await fetch(`${bases.fabric}/v2/versions/loader/${version}`, { cf: { cacheTtl: 3600, cacheEverything: true } })).json();
+      const installers = await (await fetch(`${bases.fabric}/v2/versions/installer`, { cf: { cacheTtl: 3600, cacheEverything: true } })).json();
+      const lv = loaders?.find((l) => l.loader?.stable)?.loader?.version || loaders?.[0]?.loader?.version;
+      const iv = installers?.find((i) => i.stable)?.version || installers?.[0]?.version;
+      if (!lv || !iv) return null;
+      return { url: `${bases.fabric}/v2/versions/loader/${version}/${lv}/${iv}/server/jar`, filename: `fabric-server-${version}.jar` };
+    }
+  } catch (e) {
+    console.log(`resolveJar(${loader}, ${version}): ${e.message}`);
+  }
+  return null;
+}
+
+// Java version Minecraft needs, as a number (to download a runtime).
+function javaMajor(version) {
+  const [maj, minS, patchS] = String(version).split(".");
+  if (maj !== "1") return 21;
+  const minor = +minS, patch = +(patchS || 0);
+  if (minor > 20 || (minor === 20 && patch >= 5)) return 21;
+  if (minor >= 18) return 17;
+  if (minor === 17) return 16;
+  return 8;
+}
+
+// Official Temurin (Eclipse Adoptium) JRE for Windows x64: a plain redirect
+// to their own zip. No API key, no account.
+function javaDownload(env, major) {
+  return `${env.ADOPTIUM_API || "https://api.adoptium.net"}/v3/binary/latest/${major}/ga/windows/x64/jre/hotspot/normal/eclipse`;
+}
+
+async function jarSource(env, loader, version) {
+  const js = { loader, version, java: javaRequirement(version), java_major: javaMajor(version) };
+  const resolved = await resolveJar(env, loader, version);
+  if (resolved) js.direct_url = resolved.url;
   if (loader === "paper") {
     Object.assign(js, { source_name: "PaperMC", page_url: "https://papermc.io/downloads/paper",
-      instruction: `Download the Paper build for ${version}, rename the file to server.jar, and put it next to MZForgeLauncher.exe.` });
+      instruction: `The launcher downloads Paper ${version} by itself on the first run. To do it by hand instead: download the Paper build for ${version}, rename it to server.jar, and put it next to MZForgeLauncher.exe.` });
   } else if (loader === "fabric") {
     Object.assign(js, { source_name: "FabricMC", page_url: "https://fabricmc.net/use/server/",
-      instruction: `Pick Minecraft ${version}, download the executable server jar, rename it to server.jar, and put it next to MZForgeLauncher.exe. Mods go in a "mods" folder next to it.` });
+      instruction: `The launcher downloads the Fabric server for ${version} by itself on the first run. To do it by hand instead: pick Minecraft ${version}, download the executable server jar, and rename it to server.jar.` });
   } else {
     Object.assign(js, { source_name: "Mojang", page_url: "https://www.minecraft.net/en-us/download/server",
-      direct_url: await vanillaJarURL(version),
-      instruction: `Download the official Minecraft ${version} server file (it's already called server.jar) and put it next to MZForgeLauncher.exe.` });
+      instruction: `The launcher downloads the official Minecraft ${version} server file by itself on the first run. To do it by hand instead: download it from Mojang and put it next to MZForgeLauncher.exe as server.jar.` });
   }
   return js;
 }
@@ -640,13 +709,16 @@ Minecraft ${rec.mc_version} (${loaderName})
 Address to share with friends (works right now):
     ${rec.hostname}
 
-BEFORE THE FIRST RUN
-1. Install ${jar.java} if you don't have it (https://adoptium.net is free).
-2. Get server.jar. MZForge doesn't include it: the launcher runs the
-   official file from the project that makes it, not a copy from us.
-   ${getJar}
-3. Double-click MZForgeLauncher.exe and keep its window open.
+HOW TO START IT
+1. Double-click MZForgeLauncher.exe and keep its window open.
+   On the first run it downloads the official ${loaderName} server file
+   (from ${jar.source_name}) and, if this PC doesn't have it, ${jar.java}.
+   Nothing else to install.
    When it prints SERVER ONLINE, friends can join.
+
+If it can't download the server file (no internet, or a firewall blocks
+it), you can put one in this folder by hand and start the launcher again:
+   ${getJar}
 
 Your server only exists while MZForgeLauncher.exe is running on this PC.
 Closing the window (or shutting down / sleeping the PC) takes it offline.
@@ -805,7 +877,7 @@ async function handleAllocate(request, env, url) {
     return err(502, "could not create the DNS record — try again in a moment");
   }
 
-  const jar = await jarSource(loader, mcVersion);
+  const jar = await jarSource(env, loader, mcVersion);
   const manageURL = `${webBase(env, url)}/#/manage/${serverId}/${manageKey}`;
   return json({
     server_id: serverId,
@@ -860,7 +932,7 @@ async function handleServer(request, env, url, id, sub, modId) {
 
   if (sub === "files" && request.method === "POST") {
     if (!(await allow(env, `download:${id}`, 30, 3600))) return err(429, "too many downloads — try again later");
-    const jar = await jarSource(rec.loader, rec.mc_version);
+    const jar = await jarSource(env, rec.loader, rec.mc_version);
     const manageURL = `${webBase(env, url)}/#/manage/${rec.server_id}/${key}`;
     return json({ server_id: rec.server_id, download: await downloadFiles(rec, url.origin, jar, manageURL, webBase(env, url)) });
   }
@@ -966,6 +1038,9 @@ async function handleLauncherCheck(request, env, url) {
     icon_png: rec.icon || "",
     whitelist: await playerFileEntries(rec, "whitelist_players"),
     ops: await playerFileEntries(rec, "ops"),
+    // Everything needed for a first run on a PC with nothing installed:
+    server_jar: await resolveJar(env, rec.loader, rec.mc_version),
+    java: { major: javaMajor(rec.mc_version), url: javaDownload(env, javaMajor(rec.mc_version)) },
   });
 }
 
@@ -1003,11 +1078,11 @@ async function handleVersions() {
   );
 }
 
-async function handleJarSource(url) {
+async function handleJarSource(env, url) {
   const loader = url.searchParams.get("loader") || "";
   const version = url.searchParams.get("version") || "";
   if (!LOADERS.has(loader) || !VERSION_RE.test(version)) return err(400, "unknown loader or version");
-  return json(await jarSource(loader, version));
+  return json(await jarSource(env, loader, version));
 }
 
 function handleEula(env) {
@@ -1090,7 +1165,7 @@ export default {
       if (p === "/allocate" && m === "POST") return await handleAllocate(request, env, url);
       if (p === "/slug-available" && m === "GET") return await handleSlugAvailable(request, env, url);
       if (p === "/meta/versions" && m === "GET") return await handleVersions();
-      if (p === "/meta/server-jar" && m === "GET") return await handleJarSource(url);
+      if (p === "/meta/server-jar" && m === "GET") return await handleJarSource(env, url);
       if (p === "/meta/eula" && m === "GET") return handleEula(env);
       if (p === "/meta/mode" && m === "GET") return json({ test_mode: testMode(env) });
       if (p === "/modfile" && m === "GET") return await handleModFile(request, env, url);

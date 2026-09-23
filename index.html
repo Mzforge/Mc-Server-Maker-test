@@ -289,8 +289,13 @@ details.panel summary { cursor: pointer; }
 .rec { font: 700 .68rem var(--display); letter-spacing: .02em; color: var(--glow-ink); background: var(--glow); padding: 2px 6px; border-radius: 4px; }
 .custom-ram { margin-top: 10px; display: flex; align-items: center; gap: 8px; } .custom-ram input { max-width: 110px; }
 .warn-text { color: var(--warn); }
+.swatches { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.swatches button { width: 34px; height: 34px; border-radius: 8px; background: var(--sw); border: 2px solid transparent; box-shadow: inset 0 -3px 0 rgba(0,0,0,.25); cursor: pointer; }
+.swatches button[aria-checked="true"] { border-color: var(--text); box-shadow: inset 0 -3px 0 rgba(0,0,0,.25), 0 0 0 3px rgba(47,216,255,.35); }
 .icon-row { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
 .icon-row .btn { margin: 0 8px 8px 0; }
+/* .field label { display: block } would otherwise stretch the upload button */
+.icon-row label.btn { display: inline-flex; width: auto; }
 .icon-big { width: 96px; height: 96px; border-radius: 8px; image-rendering: pixelated; border: 1px solid var(--line); background: var(--bg); }
 .picks-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px; }
 .picks { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -701,8 +706,8 @@ function viewLanding() {
       <p class="muted">About five minutes the first time. After that, starting your server is one double-click.</p>
       <ol class="steps">
         <li><h3>Create it here</h3><p>Pick a name, a Minecraft version, and Vanilla, Paper, or Fabric. Your name becomes your permanent join address. No sign-up.</p></li>
-        <li><h3>Download and add server.jar</h3><p>Unzip the launcher, then grab the official server.jar from Mojang, Paper, or Fabric. We link you straight to it.</p></li>
-        <li><h3>Run the launcher</h3><p>Double-click MZForgeLauncher.exe. It starts Minecraft and connects it to the internet through Minekube's free tunnel.</p></li>
+        <li><h3>Unzip and run it</h3><p>The launcher fetches the official server file from Mojang, Paper or Fabric, plus Java if your PC needs it. Nothing to install by hand.</p></li>
+        <li><h3>Keep the window open</h3><p>The launcher starts Minecraft and connects it to the internet through Minekube's free tunnel.</p></li>
         <li><h3>Send friends the address</h3><p>They paste it into Multiplayer. Your server stays up as long as the launcher window stays open.</p></li>
       </ol>
     </section>
@@ -723,9 +728,9 @@ function viewLanding() {
           <h3>What it needs from you</h3>
           <ul>
             <li>A Windows PC with memory to spare. The launcher gives Minecraft up to 4 GB.</li>
-            <li>Java installed. We tell you which version your Minecraft version needs.</li>
+            <li>Nothing to install: the launcher fetches the server file and Java for you.</li>
             <li>The PC stays on while people play. When it sleeps or shuts down, so does the server.</li>
-            <li>A one-time download of server.jar. We don't bundle it, so you always run the official file.</li>
+            <li>An internet connection on the first run, to fetch those files from Mojang, Paper, Fabric or Adoptium.</li>
           </ul>
         </div>
       </div>
@@ -897,6 +902,30 @@ function resizeIcon(file) {
 }
 const iconSrc = cfg => cfg.iconPNG ? `data:image/png;base64,${cfg.iconPNG}` : (cfg.icon_url && cfg.has_icon ? API + cfg.icon_url : DEFAULT_ICON);
 
+// ----- MOTD: two lines, each with a colour -----
+// Minecraft shows up to two lines under a server in the Multiplayer list.
+// The website stores them as one motd string with colour codes and a
+// newline, which is exactly what server.properties wants.
+const MC_PALETTE = [
+  ["f", "White", "#fff"], ["a", "Lime", "#5f5"], ["e", "Yellow", "#ff5"], ["6", "Gold", "#fa0"],
+  ["b", "Aqua", "#5ff"], ["d", "Pink", "#f5f"], ["c", "Red", "#f55"], ["9", "Blue", "#55f"],
+  ["2", "Green", "#0a0"], ["7", "Grey", "#aaa"],
+];
+// Splits a stored motd into { text, colour } per line.
+function parseMotd(motd, fallbackName) {
+  const lines = String(motd || "").split(/\n/).slice(0, 2);
+  const out = lines.map(line => {
+    const m = line.match(/^[&§]([0-9a-f])/i);
+    return { colour: m ? m[1].toLowerCase() : "f", text: m ? line.slice(2) : line };
+  });
+  while (out.length < 2) out.push({ colour: out.length ? "7" : "f", text: "" });
+  if (!out[0].text) out[0].text = fallbackName || "";
+  return out;
+}
+function buildMotd(lines) {
+  return lines.filter(l => l.text.trim()).map(l => `&${l.colour}${l.text}`).join("\n");
+}
+
 // ----- MOTD colours (preview) -----
 const MC_COLORS = { 0: "#000", 1: "#00a", 2: "#0a0", 3: "#0aa", 4: "#a00", 5: "#a0a", 6: "#fa0", 7: "#aaa", 8: "#555", 9: "#55f", a: "#5f5", b: "#5ff", c: "#f55", d: "#f5f", e: "#ff5", f: "#fff" };
 function motdPreviewHTML(text) {
@@ -930,8 +959,8 @@ function previewCardHTML(cfg) {
     <div class="preview-title">Your server, live preview</div>
     <div class="mc-entry">
       <img src="${esc(iconSrc(cfg))}" alt="" width="64" height="64">
-      <div><div class="mc-name">${esc(cfg.name || "My Server")}</div>
-        <div class="mc-motd">${motdPreviewHTML(cfg.motd || cfg.name || "A Minecraft Server")}</div></div>
+      <div><div class="mc-name">${motdPreviewHTML((parseMotd(cfg.motd, cfg.name)[0].text ? "&" + parseMotd(cfg.motd, cfg.name)[0].colour + parseMotd(cfg.motd, cfg.name)[0].text : cfg.name || "My Server"))}</div>
+        <div class="mc-motd">${motdPreviewHTML(parseMotd(cfg.motd, cfg.name).slice(1).map(l => l.text ? "&" + l.colour + l.text : "").join(""))}</div></div>
       <div class="mc-count">0/${esc(cfg.max_players)}</div>
     </div>
     <dl class="preview-rows">
@@ -1096,8 +1125,22 @@ function wireBasics(root, cfg, onChange) {
 }
 
 // ----- Appearance: icon + description -----
+function swatchesHTML(key, current) {
+  return `<div class="swatches" data-sw="${key}" role="radiogroup" aria-label="Colour">${MC_PALETTE.map(([c, name, hex]) =>
+    `<button type="button" role="radio" aria-checked="${c === current}" aria-label="${name}" title="${name}" data-c="${c}" style="--sw:${hex}"></button>`).join("")}</div>`;
+}
 function appearanceHTML(cfg) {
+  const L = parseMotd(cfg.motd, cfg.name);
   return `
+    <p class="muted">This is what players see in their server list. It updates on the right as you type.</p>
+    <div class="field"><label for="a-name">Server name (top line)</label>
+      <input id="a-name" type="text" maxlength="48" value="${esc(cfg.name)}" placeholder="My Server">
+      ${swatchesHTML("l1", L[0].colour)}
+      <div class="hint">Also the name on your MZForge dashboard.</div></div>
+    <div class="field"><label for="a-line2">Second line (optional)</label>
+      <input id="a-line2" type="text" maxlength="90" value="${esc(L[1].text)}" placeholder="Come and build with us">
+      ${swatchesHTML("l2", L[1].colour)}
+      <div class="hint">Colour codes still work if you'd rather type them: &amp;6gold, &amp;lbold, &amp;r reset.</div></div>
     <div class="field"><span class="label">Server icon</span>
       <div class="icon-row">
         <img class="icon-big" id="a-icon" src="${esc(iconSrc(cfg))}" alt="Server icon" width="96" height="96">
@@ -1108,16 +1151,27 @@ function appearanceHTML(cfg) {
           <div class="hint">Any picture works: it's cropped to a square and shrunk to 64×64, the size Minecraft shows in the server list. Without one, your server uses the MZForge icon.</div>
         </div>
       </div></div>
-    <div class="field"><label for="a-name">Server name</label>
-      <input id="a-name" type="text" maxlength="48" value="${esc(cfg.name)}">
-      <div class="hint">Shown on MZForge. The join address never changes.</div></div>
-    <div class="field"><label for="a-motd">Description (MOTD)</label>
-      <input id="a-motd" type="text" maxlength="120" value="${esc(cfg.motd)}" placeholder="Come and build with us">
-      <div class="hint">The line under your server's name in Minecraft's Multiplayer list. Colours: &amp;6gold, &amp;bcyan, &amp;alime, &amp;lbold, &amp;r reset.</div></div>`;
+`;
 }
 // onIcon(base64|null) lets the edit page upload straight away.
 function wireAppearance(root, cfg, onChange, onIcon) {
   const img = root.querySelector("#a-icon"), reset = root.querySelector("#a-reset");
+  const lines = parseMotd(cfg.motd, cfg.name);
+  const apply = () => {
+    lines[0].text = root.querySelector("#a-name").value;
+    lines[1].text = root.querySelector("#a-line2").value;
+    cfg.motd = buildMotd(lines);
+    onChange();
+  };
+  for (const [i, key] of [[0, "l1"], [1, "l2"]]) {
+    const g = root.querySelector(`[data-sw="${key}"]`);
+    g.onclick = e => {
+      const b = e.target.closest("button[data-c]"); if (!b) return;
+      g.querySelectorAll("button").forEach(x => x.setAttribute("aria-checked", String(x === b)));
+      lines[i].colour = b.dataset.c; apply();
+    };
+  }
+  root.querySelector("#a-line2").oninput = apply;
   root.querySelector("#a-file").onchange = async e => {
     const file = e.target.files[0]; e.target.value = "";
     try {
@@ -1132,8 +1186,7 @@ function wireAppearance(root, cfg, onChange, onIcon) {
       cfg.iconPNG = ""; cfg.has_icon = false; img.src = DEFAULT_ICON; reset.hidden = true; onChange();
     } catch (err) { toast(err.message); }
   };
-  root.querySelector("#a-name").oninput = e => { cfg.name = e.target.value; onChange(); };
-  root.querySelector("#a-motd").oninput = e => { cfg.motd = e.target.value; onChange(); };
+  root.querySelector("#a-name").oninput = e => { cfg.name = e.target.value; apply(); };
 }
 
 // ----- Add-on picker (popular picks + Modrinth search) -----
@@ -1296,7 +1349,7 @@ async function viewCreate() {
         <select id="version">${cfg.versions.map(v => `<option ${v === cfg.version ? "selected" : ""}>${esc(v)}</option>`).join("")}</select>
         <div class="hint">Players join with this same version${cfg.loader === "paper" ? " (or add ViaVersion later to let newer ones in)" : ""}.</div></div>`;
     else if (cfg.step === 1) inner = `<h2>The basics</h2><p class="muted">Sensible defaults are already set. Change only what you want.</p>${basicsHTML(cfg)}`;
-    else if (cfg.step === 2) inner = `<h2>Appearance</h2><p class="muted">How your server looks in Minecraft's server list.</p>${appearanceHTML(cfg)}`;
+    else if (cfg.step === 2) inner = `<h2>Appearance</h2>${appearanceHTML(cfg)}`;
     else if (cfg.step === 3) inner = !MOD_LOADERS[cfg.loader] ? `
       <h2>Add-ons</h2><div class="alert info">Vanilla runs the game exactly as Mojang ships it, so it can't use mods or plugins. Go back and pick Paper for plugins or Fabric for mods, or carry on.</div>` : `
       <h2>${esc(S[3])}</h2>
@@ -1667,27 +1720,19 @@ function wireMods(sv, key) {
 }
 
 function setupHTML(sv, jar, withHeading = true) {
-  const java = jar?.java || "the Java version your Minecraft version needs";
-  let jarStep;
-  if (jar?.direct_url) {
-    jarStep = `<p>Download the official Minecraft ${esc(sv.mc_version)} server file from Mojang. It's already named server.jar. Put it in the same folder as MZForgeLauncher.exe.</p>
-      <a class="btn" href="${esc(jar.direct_url)}" rel="noopener">Download server.jar from Mojang</a>`;
-  } else if (jar) {
-    jarStep = `<p>${esc(jar.instruction)}</p><a class="btn" href="${esc(jar.page_url)}" target="_blank" rel="noopener">Open ${esc(jar.source_name)} downloads</a>`;
-  } else {
-    jarStep = `<p>Download the ${esc(loaderName(sv.loader))} ${esc(sv.mc_version)} server jar from its official site, rename it to server.jar, and put it next to MZForgeLauncher.exe. <a href="#/help/server-jar">Where to get it</a></p>`;
-  }
+  const java = jar?.java || "Java";
+  const source = jar?.source_name || "its official site";
   return `
   <section class="${withHeading ? "panel" : ""}">
     ${withHeading ? "<h2>Get it running</h2>" : ""}
     <ol class="setup">
       <li><h3>Unzip the download</h3><p>Extract mzforge-${esc(sv.slug)}.zip into its own folder, such as Documents\\MZForge\\${esc(sv.slug)}. Your world gets saved there, so don't run it from inside the ZIP or your Downloads preview.</p></li>
-      <li><h3>Add server.jar</h3>${jarStep}</li>
-      <li><h3>Install ${esc(java)}</h3><p>Skip this if you already have it. The free Temurin build from Adoptium works well.</p>
-        <a class="btn ghost" href="https://adoptium.net/temurin/releases/" target="_blank" rel="noopener">Open Adoptium</a></li>
-      <li><h3>Double-click MZForgeLauncher.exe</h3><p>Windows may warn about an unrecognized app the first time. Choose <span class="kbd">More info</span>, then <span class="kbd">Run anyway</span>. Keep the window open. When it says SERVER ONLINE, this page turns green.</p></li>
+      <li><h3>Double-click MZForgeLauncher.exe</h3>
+        <p>That's the whole setup. On the first run it downloads the official ${esc(loaderName(sv.loader))} ${esc(sv.mc_version)} server file from ${esc(source)}, and ${esc(java)} if this PC doesn't have it. Later runs start straight away.</p>
+        <p>Windows may warn about an unrecognized app the first time: choose <span class="kbd">More info</span>, then <span class="kbd">Run anyway</span>. Keep the window open. When it says SERVER ONLINE, this page turns green.</p></li>
       <li><h3>Send friends the address above</h3><p>They add it under Multiplayer. <a href="#/help/troubleshooting">Something not working?</a></p></li>
     </ol>
+    <p class="hint">Downloads blocked by a firewall? Put a ${esc(loaderName(sv.loader))} ${esc(sv.mc_version)} server file in the folder yourself, named server.jar${jar?.page_url ? ` (<a href="${esc(jar.page_url)}" target="_blank" rel="noopener">${esc(source)} downloads</a>)` : ""}, and the launcher will use it.</p>
   </section>`;
 }
 
@@ -1729,8 +1774,8 @@ async function viewShare(id) {
 function viewHelp(anchor) {
   setTitle("Help");
   const toc = [
-    ["how", "How MZForge works"], ["manage", "No account? How managing works"], ["renew", "Keeping your address (30 days)"], ["needs", "What you need"], ["server-jar", "Getting server.jar"],
-    ["java", "Java"], ["running", "Running your server"], ["antivirus", "Windows and antivirus warnings"],
+    ["how", "How MZForge works"], ["manage", "No account? How managing works"], ["renew", "Keeping your address (30 days)"], ["needs", "What you need"], ["server-jar", "The server file and Java"],
+    ["running", "Running your server"], ["antivirus", "Windows and antivirus warnings"],
     ["mods", "Mods and plugins"], ["settings", "Server settings"], ["troubleshooting", "Friends can't join"], ["branded", "The .mc.mzforge.com address"], ["world", "Your world and backups"],
   ];
   $app.innerHTML = `
@@ -1766,20 +1811,13 @@ function viewHelp(anchor) {
             <li>A steady internet connection. Upload speed matters most.</li>
           </ul></section>
 
-        <section id="h-server-jar"><h2>Getting server.jar</h2>
-          <p>The download doesn't include server.jar. We don't redistribute Mojang's server software; you get it directly from the people who make it. It's a one-time step per server, and your server page links to the right place for your version.</p>
-          <ul>
-            <li><b>Vanilla:</b> the official file from Mojang. Your server page links straight to the exact version, already named server.jar.</li>
-            <li><b>Paper:</b> from <a href="https://papermc.io/downloads/paper" target="_blank" rel="noopener">papermc.io</a>. Pick your version, download it, and rename the file to server.jar. Plugins go in a folder called plugins.</li>
-            <li><b>Fabric:</b> from <a href="https://fabricmc.net/use/server/" target="_blank" rel="noopener">fabricmc.net</a>. Choose your Minecraft version, download the executable server jar, and rename it to server.jar. Mods go in a folder called mods.</li>
-          </ul>
-          <p>Put server.jar in the same folder as MZForgeLauncher.exe. If the launcher says it can't find server.jar, check the file isn't actually named server.jar.jar. Windows hides file extensions by default; turn on File name extensions in File Explorer's View menu to see them.</p></section>
+        <section id="h-server-jar"><h2>The server file and Java</h2>
+          <p>You don't need to download either. The first time you run MZForgeLauncher.exe it fetches the official server file for your software and version, straight from the people who make it: Mojang for Vanilla, <a href="https://papermc.io" target="_blank" rel="noopener">PaperMC</a> for Paper, <a href="https://fabricmc.net" target="_blank" rel="noopener">FabricMC</a> for Fabric. MZForge never re-hosts them.</p>
+          <p>If your PC doesn't have the Java version your Minecraft version needs, the launcher downloads a private copy (Eclipse Temurin, about 45 MB) into a <b>runtime</b> folder next to the server. It doesn't touch any Java you already have installed.</p>
+          <p>Both are one-time downloads, and they show progress in the launcher window. If a firewall blocks them, you can drop a server file into the folder yourself named <b>server.jar</b> and the launcher will use it. Watch out for Windows hiding file extensions: it must be server.jar, not server.jar.jar.</p></section>
 
-        <section id="h-java"><h2>Java</h2>
-          <p>Minecraft 1.20.5 and newer need Java 21. Versions 1.18 to 1.20.4 need Java 17, and older versions generally need Java 8. Your server page shows the exact one for your server.</p>
-          <p>The free <a href="https://adoptium.net/temurin/releases/" target="_blank" rel="noopener">Temurin build from Adoptium</a> is a good choice. During install, turn on the option that adds Java to PATH. If the launcher window closes right away, or mentions an unsupported class version, you have the wrong Java version.</p></section>
-
-        <section id="h-running"><h2>Running your server</h2>
+        
+<section id="h-running"><h2>Running your server</h2>
           <ol>
             <li>Double-click MZForgeLauncher.exe. The first start takes longer while Minecraft generates the world.</li>
             <li>Wait for SERVER ONLINE. The launcher checks the public address itself before it says so.</li>
