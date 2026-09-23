@@ -1881,11 +1881,11 @@ function viewHelp(anchor) {
 
         <section id="h-listing"><h2>What players see in the server list</h2>
           <p>Your name, description, icon and player limit come from the Appearance and Settings tabs. The launcher applies them each time it starts, so restart it after changing them.</p>
-          <p>Your server sits behind Gate, the program that carries players through the tunnel to your PC, and Gate is what answers the server list. If players see "A Gate Proxy" instead of your server, you're on an older launcher: download your server again from its page to get the current one.</p></section>
+          <p>On modern Paper servers, MZForge installs Minekube's official Connect plugin directly inside Paper, so the public server list is answered by your Paper server itself. Vanilla, Fabric, and older Paper versions use the Gate connector fallback.</p></section>
 
         <section id="h-tunnel"><h2>If the tunnel is refused</h2>
           <p>Players reach your PC through <a href="https://connect.minekube.com" target="_blank" rel="noopener">Minekube Connect</a>, but MZForge manages it in the background. You do not need a Minekube account, endpoint, or token.</p>
-          <p>On the first successful connection Gate creates a private endpoint token. The launcher saves that token back to your MZForge server automatically, so future downloads reconnect to the same endpoint. If an older tokenless server cannot register, download it again: the launcher and website will move it to a unique MZForge endpoint automatically.</p></section>
+          <p>On modern Paper, the official Connect plugin creates a private endpoint token in <code>plugins/connect/token.json</code>. The launcher saves it back to MZForge automatically, so future downloads reconnect to the same readable endpoint. Vanilla, Fabric, and older Paper use Gate's equivalent token flow. Users never need to copy or paste a Minekube token.</p></section>
 
         <section id="h-troubleshooting"><h2>Friends can't join</h2>
           <ul>

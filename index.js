@@ -339,10 +339,10 @@ function managedProperties(rec) {
     "simulation-distance": String(rec.simulation_distance || 10),
     "white-list": rec.whitelist ? "true" : "false",
     "enforce-whitelist": rec.whitelist ? "true" : "false",
-    // Minecraft sits behind Gate (the Minekube Connect tunnel), and Gate
-    // does the account checking. Minekube's docs require the backend
-    // itself to be offline-mode with secure-profile enforcement off;
-    // whether real accounts are required is set on Gate instead.
+    // Modern Paper is exposed by Minekube's official Connect plugin; other
+    // loaders use the Gate connector fallback. Keeping the backend offline
+    // with secure-profile enforcement disabled is compatible with both paths;
+    // the endpoint policy decides whether cracked Java players are accepted.
     "online-mode": "false",
     "enforce-secure-profile": "false",
   };
@@ -801,7 +801,10 @@ your server page. The launcher applies them each time it starts.
   const extra = {};
   const wl = await playerFileEntries(rec, "whitelist_players");
   const ops = await playerFileEntries(rec, "ops");
-  if (rec.connect_token) extra["connect.json"] = JSON.stringify({ token: rec.connect_token }, null, 2);
+  if (rec.connect_token) {
+    const tokenPath = rec.loader === "paper" ? "plugins/connect/token.json" : "connect.json";
+    extra[tokenPath] = JSON.stringify({ token: rec.connect_token }, null, 2);
+  }
   if (wl.length) extra["whitelist.json"] = JSON.stringify(wl, null, 2);
   if (ops.length) extra["ops.json"] = JSON.stringify(ops, null, 2);
   return {
@@ -1080,8 +1083,9 @@ async function ensureHeadlessEndpoint(env, rec) {
   return rec;
 }
 
-// Headless token persistence. Gate generates connect.json automatically for a
-// new endpoint; the launcher sends that token here using its per-server secret.
+// Headless token persistence. Modern Paper's Connect plugin generates
+// plugins/connect/token.json; Gate uses connect.json for the fallback path.
+// The launcher sends either endpoint token here using its per-server secret.
 // Users never need a Minekube account, dashboard, or manual token field.
 async function handleLauncherConnectToken(request, env) {
   let req;
@@ -1144,7 +1148,7 @@ async function handleLauncherCheck(request, env, url) {
     mods: parseMods(rec).map(({ title, filename, url, sha512 }) => ({ title, filename, url, sha512 })),
     website: webBase(env, url),
     ram: `${rec.ram_mb || 4096}M`,
-    online_mode: !!rec.online_mode,   // Gate enforces this, not server.properties
+    online_mode: !!rec.online_mode,   // connector endpoint policy: false allows cracked Java
     connect_token: rec.connect_token || "",
     hostname: rec.hostname,
     connect_endpoint: rec.connect_endpoint,

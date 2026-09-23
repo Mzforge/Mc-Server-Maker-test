@@ -53,14 +53,15 @@ Every change you commit to GitHub goes live automatically.
   PaperMC or FabricMC, resolved by the Worker and checksum-verified) and,
   if the PC lacks the right Java, a private Temurin runtime into a
   `runtime` folder. Downloads are restricted to those vendors' own hosts.
-- **Headless Minekube Connect:** the backend runs `online-mode=false` +
-  `enforce-secure-profile=false` behind standard Gate. MZForge assigns a
-  globally unique Connect endpoint from the random server id. On first
-  registration Gate generates `connect.json`; the launcher uploads that
-  endpoint token back to the Worker with its per-server credential. Future
-  downloads contain the same token automatically. End users never create a
-  Minekube account, endpoint, or token. Gate stays `onlineMode=true`; the
-  website's cracked-mode switch only controls `allowOfflineModePlayers`.
+- **Headless Minekube Connect:** modern Paper servers use Minekube's official
+  Connect Java plugin directly (`Connect -> Paper`). The launcher downloads
+  `connect-spigot.jar`, writes `plugins/connect/config.yml`, sets Minekube's
+  required Paper `connection-throttle: -1`, and backs up the generated
+  `plugins/connect/token.json` to MZForge automatically. Cracked mode maps to
+  `allow-offline-mode-players: true`, so players can use the normal readable
+  `<endpoint>.play.minekube.net` address directly. Vanilla, Fabric, and older
+  Paper versions keep the Gate connector fallback. End users never create a
+  Minekube account, endpoint, or token.
 - **Appearance:** server name and an optional second line, each with a
   Minecraft colour, shown live in a server-list preview. Stored as one
   motd with colour codes and a newline.
@@ -95,6 +96,6 @@ MZForge uses the server slug as the Connect endpoint. A server created as
 `friday` uses `mzf-friday.play.minekube.net`. Minekube documents endpoint
 names as configurable human-readable identifiers; MZForge adds the `mzf-`
 prefix to reduce collisions with unrelated endpoints. The launcher persists
-the endpoint token automatically, checks reachability from both the local PC
-and the Worker, waits through Minekube's documented propagation window, and
-restarts Gate once automatically if the route still has not appeared.
+the endpoint token automatically and checks reachability from both the local PC
+and the Worker. Modern Paper uses the official Connect plugin directly; Gate is
+only the fallback connector for Vanilla, Fabric, and older Paper versions.
