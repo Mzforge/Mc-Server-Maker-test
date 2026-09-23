@@ -1595,6 +1595,7 @@ async function overviewTabHTML(sv, key, setup) {
   return `
     <div id="plate">${plateHTML(sv, { big: true })}</div>
     <p class="status-line muted" id="sdetail">${esc(detailText(sv))}</p>
+    ${claimHintHTML(sv)}
     <ul class="facts">
       <li>Software <b>${esc(loaderName(sv.loader))} ${esc(sv.mc_version)}</b></li>
       <li>Created <b>${esc(dateStr(sv.created_at))}</b></li>
@@ -1610,6 +1611,18 @@ async function overviewTabHTML(sv, key, setup) {
     ${setup ? "" : `<div class="panel">${keyPanel}</div>`}
     ${!showSetup ? `<details class="panel" id="moresetup"><summary class="label">Setup steps</summary><div id="setupbody"></div></details>` : ""}
     <p class="panel small"><button class="linkish" id="forgetme">Remove from this browser</button> <span class="muted">(doesn't delete the server)</span></p>`;
+}
+// The launcher says it's running, but the address isn't answering: on
+// Minekube that usually means the endpoint hasn't been claimed yet.
+function claimHintHTML(sv) {
+  const recent = sv.last_seen && (Date.now() - new Date(sv.last_seen)) < 20 * 60 * 1000;
+  if (sv.status !== "offline" || !recent) return "";
+  return `<div class="alert warn" style="margin-top:14px">
+    <b>Your launcher is running, but the address isn't answering.</b>
+    Minekube needs this endpoint claimed before it will carry players:
+    sign in at <a href="https://app.minekube.com" target="_blank" rel="noopener">app.minekube.com</a>, create an endpoint named exactly
+    <b>mzf-${esc(sv.slug)}</b>, then paste its token into Settings, Advanced, Minekube Connect token.
+    <a href="#/help/tunnel">Full steps</a></div>`;
 }
 function detailText(s) { return statusInfo(s).detail + (s.status === "online" && s.live_version ? ` Running ${s.live_version}.` : ""); }
 
@@ -1904,7 +1917,7 @@ function viewHelp(anchor) {
             <li><b>Your server page says Offline.</b> The launcher isn't running, the PC is asleep, or it lost its internet connection. Start the launcher again.</li>
             <li><b>It says Online, but a friend can't connect.</b> Check they pasted the full address and are on the same Minecraft version as the server.</li>
             <li><b>"Outdated client" or "Outdated server".</b> Their game version doesn't match. They can pick a version in the Minecraft Launcher's Installations tab.</li>
-            <li><b>The launcher says the public address isn't answering.</b> Wait a minute and restart the launcher. Minekube's network occasionally takes a moment to register a new server. If it keeps failing, see <a href="#/help/tunnel">If the tunnel is refused</a>.</li>
+            <li><b>The launcher says the public address isn't answering yet.</b> That's normal on a brand-new server: Minekube's network can take several minutes to start routing a new address. Leave the launcher window open, try joining anyway, and it prints SERVER ONLINE as soon as the address works. If it never does, see <a href="#/help/tunnel">If the tunnel is refused</a>.</li>
             <li><b>A friend plays Bedrock</b> (phone, console, or the Windows Bedrock app). MZForge servers are Java Edition only for now.</li>
           </ul></section>
 

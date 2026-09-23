@@ -51,6 +51,7 @@ const ADDED_COLUMNS = {
   view_distance: `INTEGER NOT NULL DEFAULT 10`,
   simulation_distance: `INTEGER NOT NULL DEFAULT 10`,
   connect_token: `TEXT NOT NULL DEFAULT ''`,
+  probe_fails: `INTEGER NOT NULL DEFAULT 0`,
   ram_mb: `INTEGER NOT NULL DEFAULT 4096`,
   port: `INTEGER NOT NULL DEFAULT 25565`,
   whitelist: `INTEGER NOT NULL DEFAULT 0`,
@@ -658,18 +659,26 @@ async function liveStatus(env, rec) {
   if (Date.now() - rec.checked_at < 30_000 && rec.live_status) {
     return { status: rec.live_status, version: rec.live_version };
   }
-  let status = "offline", version = "";
+  // Minekube's edge can be slow to answer, especially for a newly
+  // registered endpoint, so: a generous timeout, and one failed ping isn't
+  // enough to call a server offline — two in a row are.
+  let status = "offline", version = "", fails = (rec.probe_fails || 0) + 1;
   try {
-    const r = await mcPing(rec.hostname, 25565, 4000);
+    const r = await mcPing(rec.hostname, 25565, 10000);
     if (!rec.verified_version || r.versionName === rec.verified_version) {
       status = "online";
       version = r.versionName;
+      fails = 0;
     }
   } catch (e) {
-    if (e.unreachableFromWorkers) { status = "online"; version = rec.verified_version; }
+    if (e.unreachableFromWorkers) { status = "online"; version = rec.verified_version; fails = 0; }
   }
-  await env.DB.prepare(`UPDATE servers SET live_status = ?1, live_version = ?2, checked_at = ?3 WHERE server_id = ?4`)
-    .bind(status, version, Date.now(), rec.server_id).run();
+  if (status === "offline" && fails < 2) {
+    status = "online"; // still trusting the launcher's own report for now
+    version = rec.verified_version;
+  }
+  await env.DB.prepare(`UPDATE servers SET live_status = ?1, live_version = ?2, checked_at = ?3, probe_fails = ?4 WHERE server_id = ?5`)
+    .bind(status, version, Date.now(), fails, rec.server_id).run();
   return { status, version };
 }
 
@@ -1048,7 +1057,7 @@ async function handleAnnounce(request, env) {
   await env.DB.prepare(
     `UPDATE servers SET status = ?1, last_seen = ?2,
        verified_version = CASE WHEN ?3 != '' THEN ?3 ELSE verified_version END,
-       checked_at = 0, live_status = '',
+       checked_at = 0, live_status = '', probe_fails = 0,
        expires_at = CASE WHEN ?1 = 'online' AND expires_at > ?2 AND expires_at < ?5 THEN ?5 ELSE expires_at END
      WHERE server_id = ?4`
   ).bind(req.status, now(), String(req.verified_version || ""), rec.server_id, inDays(RENEW_DAYS)).run();
