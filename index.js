@@ -370,7 +370,10 @@ async function slugTaken(env, slug) {
 // Minekube endpoint names are globally unique, not merely unique inside
 // MZForge. Use the random 64-bit server id rather than the human slug so a
 // user never has to resolve a Minekube name collision manually.
-const headlessEndpoint = (serverId) => `mzf-${serverId}`;
+// Keep endpoint names compact. Minekube accepts short human-readable endpoint names reliably;
+// use 48 bits of the random server id (12 hex chars) for collision resistance while
+// keeping the full endpoint at 16 characters: "mzf-" + 12 hex.
+const headlessEndpoint = (serverId) => `mzf-${String(serverId).slice(0, 12)}`;
 const minekubeHostname = (endpoint) => `${endpoint}.play.minekube.net`;
 
 // ---------------------------------------------------------------- mods & plugins (Modrinth)
@@ -868,7 +871,7 @@ async function handleAllocate(request, env, url) {
   const settings = await settingsUpdates(env, req, null);
 
   // No accounts, so the spam brake is per network.
-  const perDay = parseInt(env.MAX_CREATIONS_PER_DAY || "100", 10);
+  const perDay = parseInt(env.MAX_CREATIONS_PER_DAY || "5", 10);
   if (!(await allow(env, `create:${clientIP(request)}`, perDay, 86400))) {
     return err(429, "too many servers created from this network today — try again tomorrow");
   }
@@ -883,9 +886,10 @@ async function handleAllocate(request, env, url) {
     manage_key_hash: await sha256Hex(manageKey),
     slug,
     display_name: displayName,
-    // Use the random server id for the Minekube endpoint. Endpoint names are
+    // Use a compact prefix of the random server id for the Minekube endpoint. Endpoint names are
     // global across Minekube, so a slug-only name can collide with somebody
-    // outside MZForge and would force the user to touch Minekube manually.
+    // outside MZForge. 12 hex chars = 48 random bits while keeping the full
+    // endpoint name short enough for Connect.
     connect_endpoint: headlessEndpoint(serverId),
     hostname: minekubeHostname(headlessEndpoint(serverId)),
     custom_hostname: `${slug}.mc.${domain}`,
