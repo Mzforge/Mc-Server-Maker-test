@@ -1809,7 +1809,7 @@ function viewHelp(anchor) {
   const toc = [
     ["how", "How MZForge works"], ["manage", "No account? How managing works"], ["renew", "Keeping your address (30 days)"], ["needs", "What you need"], ["server-jar", "The server file and Java"],
     ["running", "Running your server"], ["antivirus", "Windows and antivirus warnings"],
-    ["mods", "Mods and plugins"], ["tunnel", "If the tunnel is refused"], ["settings", "Server settings"], ["troubleshooting", "Friends can't join"], ["branded", "The .mc.mzforge.com address"], ["world", "Your world and backups"],
+    ["mods", "Mods and plugins"], ["listing", "What players see in the list"], ["tunnel", "If the tunnel is refused"], ["settings", "Server settings"], ["troubleshooting", "Friends can't join"], ["branded", "The .mc.mzforge.com address"], ["world", "Your world and backups"],
   ];
   $app.innerHTML = `
   <div class="wrap">
@@ -1883,6 +1883,10 @@ function viewHelp(anchor) {
             <li><b>Icon and description:</b> the picture and text shown in Minecraft's server list. Any picture works; it's cropped and shrunk to the 64&times;64 Minecraft needs. Servers without one use the MZForge icon.</li>
           </ul>
           <p>The launcher applies your settings each time it starts, so restart it after changing them. Players you add in-game with /whitelist add or /op are kept. Other lines in server.properties are yours to edit.</p></section>
+
+        <section id="h-listing"><h2>What players see in the server list</h2>
+          <p>Your name, description, icon and player limit come from the Appearance and Settings tabs. The launcher applies them each time it starts, so restart it after changing them.</p>
+          <p>Your server sits behind Gate, the program that carries players through the tunnel to your PC, and Gate is what answers the server list. If players see "A Gate Proxy" instead of your server, you're on an older launcher: download your server again from its page to get the current one.</p></section>
 
         <section id="h-tunnel"><h2>If the tunnel is refused</h2>
           <p>Players reach your PC through <a href="https://connect.minekube.com" target="_blank" rel="noopener">Minekube Connect</a>, a free tunnel network. If the launcher says Minekube isn't accepting the registration, that endpoint needs its own Connect token:</p>
