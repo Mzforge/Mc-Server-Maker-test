@@ -572,7 +572,7 @@ function statusInfo(sv) {
   const last = ago(sv.last_seen);
   const map = {
     online: ["Online", "Friends can join now."],
-    offline: ["Offline", last ? `Last online ${last}. It comes back when MZForgeLauncher.exe is running on the host PC.` : "Not running right now."],
+    offline: ["Offline", last ? `Last seen ${last}. It comes back when MZForgeLauncher.exe is running on the host PC.` : "Not running right now."],
     never_started: ["Not started yet", "Run MZForgeLauncher.exe on your PC to bring it online."],
   };
   const [label, detail] = map[sv.status] || ["Checking", ""];
@@ -1034,7 +1034,9 @@ function basicsHTML(cfg) {
         <div class="hint">How far away things keep ticking (mobs, crops, redstone). Lower saves more than render distance. 3-32.</div></div>
     </div>
     <details class="field"><summary class="label" style="cursor:pointer">Advanced</summary>
-      <div class="alert info" style="margin-top:10px">MZForge manages the Minekube tunnel automatically. No Minekube account, endpoint setup, or token is needed.</div>
+      <div class="field" style="margin-top:10px"><label for="b-token">Minekube Connect token</label>
+        <input id="b-token" type="text" autocomplete="off" spellcheck="false" value="${esc(cfg.connect_token || "")}" placeholder="Only needed if the launcher asks for one">
+        <div class="hint">Minekube runs the tunnel that carries players to your PC. If the launcher says the tunnel was refused, sign in at <a href="https://app.minekube.com" target="_blank" rel="noopener">app.minekube.com</a>, create an endpoint named exactly <b>mzf-${esc(cfg.slug || "yourname")}</b>, and paste its token here.</div></div>
       <div class="field" style="margin-top:10px"><label for="b-port">Local port</label>
         <input id="b-port" type="text" inputmode="numeric" value="${esc(cfg.port)}" style="max-width:180px">
         <div class="hint">The port Minecraft uses on your own PC. Leave it at 25565 unless another server on this PC already uses it. Friends never need it.</div></div>
@@ -1114,6 +1116,8 @@ function wireBasics(root, cfg, onChange) {
     onChange();
   });
   root.querySelector("#b-port").oninput = e => { const n = parseInt(e.target.value, 10); if (n >= 1024 && n <= 65535) cfg.port = n; };
+  const token = root.querySelector("#b-token");
+  if (token) token.oninput = e => cfg.connect_token = e.target.value.trim();
   root.querySelector("#b-view").oninput = e => {
     const n = parseInt(e.target.value, 10);
     if (n >= 3 && n <= 32) { cfg.view_distance = n; root.querySelector("#b-viewhint").innerHTML = viewHint(cfg); onChange(); }
@@ -1321,6 +1325,7 @@ function settingsPayload(cfg) {
     difficulty: cfg.difficulty, ram_mb: cfg.ram_mb, port: cfg.port, whitelist: !!cfg.whitelist,
     whitelist_players: cfg.whitelist_players, ops: cfg.ops, online_mode: !!cfg.online_mode,
     view_distance: cfg.view_distance ?? 10, simulation_distance: cfg.simulation_distance ?? 10,
+    connect_token: cfg.connect_token || "",
   };
 }
 
@@ -1342,7 +1347,7 @@ async function viewCreate() {
     step: 0, name: "", slug: "", slugEdited: false, slugOK: false, loader: "paper", version: "", versions: [], eula: null, accepted: false,
     max_players: 10, ram_mb: 0, ramTouched: false, port: 25565, pvp: true, gamemode: "survival", difficulty: "normal",
     whitelist: false, whitelist_players: [], ops: [], online_mode: true, motd: "", iconPNG: "", addons: [],
-    view_distance: 10, simulation_distance: 10,
+    view_distance: 10, simulation_distance: 10, connect_token: "",
   };
   cfg.ram_mb = recommendRam(cfg.loader, cfg.max_players, 0);
   $app.innerHTML = `<div class="wrap"><p class="muted">Loading…</p></div>`;
@@ -1353,7 +1358,7 @@ async function viewCreate() {
 
   const steps = () => ["Server type", "Basics", "Appearance", cfg.loader === "fabric" ? "Mods" : cfg.loader === "paper" ? "Plugins" : "Add-ons", "Create"];
   let slugTimer, slugSeq = 0;
-  const previewAddr = v => v ? `Your join address will be <b>mzf-${esc(v)}.play.minekube.net</b>. MZForge handles Minekube automatically.` : `Choose a server name and MZForge will use it in your public join address.`;
+  const previewAddr = v => v ? `Your friends will join at <code>${addrHTML("mzf-" + v + ".play.minekube.net")}</code>` : `Your friends will join at <code>mzf-<span class="muted">yourname</span>.play.minekube.net</code>`;
   const followRam = () => { if (!cfg.ramTouched) cfg.ram_mb = recommendRam(cfg.loader, cfg.max_players, cfg.addons.length); };
   const updatePreview = () => { const p = $("preview-slot"); if (p) p.innerHTML = previewCardHTML(cfg); };
 
@@ -1364,11 +1369,11 @@ async function viewCreate() {
       <h2>Server type</h2>
       <div class="field"><label for="name">Server name</label>
         <input id="name" type="text" maxlength="48" autocomplete="off" value="${esc(cfg.name)}" placeholder="Friday Night SMP"></div>
-      <div class="field"><label for="slug">Server name for your MZForge link</label>
-        <div class="slug-input"><input id="slug" type="text" maxlength="32" autocomplete="off" spellcheck="false" autocapitalize="off" value="${esc(cfg.slug)}" aria-describedby="slug-preview slug-msg"></div>
+      <div class="field"><label for="slug">Address name</label>
+        <div class="slug-input"><span>mzf-</span><input id="slug" type="text" maxlength="32" autocomplete="off" spellcheck="false" autocapitalize="off" value="${esc(cfg.slug)}" aria-describedby="slug-preview slug-msg"></div>
         <div class="addr-preview" id="slug-preview" aria-live="polite">${previewAddr(cfg.slug)}</div>
         <div class="hint" id="slug-msg" aria-live="polite"></div>
-        <div class="hint">Lowercase letters, numbers, and hyphens. MZForge uses this for your server page and future branded address.</div></div>
+        <div class="hint">Lowercase letters, numbers, and hyphens. Permanent: it can't be changed later.</div></div>
       <fieldset class="field" style="border:0;padding:0"><legend class="label">Software</legend>
         <div class="choices">${Object.entries(LOADERS).map(([k, l]) => `
           <div class="choice"><input type="radio" name="loader" id="l-${k}" value="${k}" ${cfg.loader === k ? "checked" : ""}>
@@ -1390,7 +1395,7 @@ async function viewCreate() {
       <h2>Check and create</h2>
       <dl class="review">
         <dt>Name</dt><dd>${esc(cfg.name.trim() || cfg.slug)}</dd>
-        <dt>Join address</dt><dd>Assigned automatically when the server is created</dd>
+        <dt>Join address</dt><dd>mzf-${esc(cfg.slug)}.play.minekube.net</dd>
         <dt>Software</dt><dd>${esc(loaderName(cfg.loader))} ${esc(cfg.version)}</dd>
         <dt>Memory</dt><dd>${esc(gbLabel(cfg.ram_mb))}, up to ${esc(cfg.max_players)} players</dd>
         ${MOD_LOADERS[cfg.loader] ? `<dt>${esc(S[3])}</dt><dd>${cfg.addons.length ? cfg.addons.map(a => esc(a.title)).join(", ") : "None"}</dd>` : ""}
@@ -1606,6 +1611,8 @@ async function overviewTabHTML(sv, key, setup) {
     ${!showSetup ? `<details class="panel" id="moresetup"><summary class="label">Setup steps</summary><div id="setupbody"></div></details>` : ""}
     <p class="panel small"><button class="linkish" id="forgetme">Remove from this browser</button> <span class="muted">(doesn't delete the server)</span></p>`;
 }
+// The launcher says it's running, but the address isn't answering: on
+// Minekube that usually means the endpoint hasn't been claimed yet.
 function detailText(s) { return statusInfo(s).detail + (s.status === "online" && s.live_version ? ` Running ${s.live_version}.` : ""); }
 
 function wireOverview(sv, key) {
@@ -1652,7 +1659,7 @@ function settingsTabHTML(sv) {
         </form>
         <section class="danger-zone panel">
           <h2>Delete server</h2>
-          <p class="muted small">The launcher from this download stops working, and the address <b>${esc(sv.hostname)}</b> is retired with this server. World files on your PC aren't touched.</p>
+          <p class="muted small">The launcher from this download stops working, and the address <b>mzf-${esc(sv.slug)}</b> is retired for good: nobody can use it again, including you. World files on your PC aren't touched.</p>
           <form id="del"><label class="label" for="confirm">Type ${esc(sv.slug)} to confirm</label>
             <div class="inline-form"><input id="confirm" type="text" autocomplete="off" spellcheck="false" autocapitalize="off"><button class="btn danger" id="delbtn" disabled>Delete server</button></div></form>
         </section>
@@ -1881,24 +1888,25 @@ function viewHelp(anchor) {
 
         <section id="h-listing"><h2>What players see in the server list</h2>
           <p>Your name, description, icon and player limit come from the Appearance and Settings tabs. The launcher applies them each time it starts, so restart it after changing them.</p>
-          <p>On modern Paper servers, MZForge installs Minekube's official Connect plugin directly inside Paper, so the public server list is answered by your Paper server itself. Vanilla, Fabric, and older Paper versions use the Gate connector fallback.</p></section>
+          <p>Your server sits behind Gate, the program that carries players through the tunnel to your PC, and Gate is what answers the server list. If players see "A Gate Proxy" instead of your server, you're on an older launcher: download your server again from its page to get the current one.</p></section>
 
         <section id="h-tunnel"><h2>If the tunnel is refused</h2>
-          <p>Players reach your PC through <a href="https://connect.minekube.com" target="_blank" rel="noopener">Minekube Connect</a>, but MZForge manages it in the background. You do not need a Minekube account, endpoint, or token.</p>
-          <p>On modern Paper, the official Connect plugin creates a private endpoint token in <code>plugins/connect/token.json</code>. The launcher saves it back to MZForge automatically, so future downloads reconnect to the same readable endpoint. Vanilla, Fabric, and older Paper use Gate's equivalent token flow. Users never need to copy or paste a Minekube token.</p></section>
+          <p>Players reach your PC through <a href="https://connect.minekube.com" target="_blank" rel="noopener">Minekube Connect</a>, a free tunnel network. You don't need an account: the first time your server starts, Minekube gives that address its own token and the launcher saves it, both in the server folder and on MZForge, so re-downloads reconnect to the same address.</p>
+          <p>If the launcher says Minekube refused the registration, the usual cause is the address name already belonging to someone else's token. Create a new server with a different name, or ask us to look into it.</p>
+          <p>A "server-list ping wasn't answered" note is not a failure: Minekube's tunnel doesn't always answer pings even while players can join normally. That's why your server page uses the launcher's own check-ins for online status, not pings.</p></section>
 
         <section id="h-troubleshooting"><h2>Friends can't join</h2>
           <ul>
             <li><b>Your server page says Offline.</b> The launcher isn't running, the PC is asleep, or it lost its internet connection. Start the launcher again.</li>
             <li><b>It says Online, but a friend can't connect.</b> Check they pasted the full address and are on the same Minecraft version as the server.</li>
             <li><b>"Outdated client" or "Outdated server".</b> Their game version doesn't match. They can pick a version in the Minecraft Launcher's Installations tab.</li>
-            <li><b>The launcher says the public address isn't answering.</b> Keep the launcher open for a few minutes and try again. A brand-new Minekube route can take a little time to become reachable. If it keeps failing, see <a href="#/help/tunnel">If the tunnel is refused</a>.</li>
+            <li><b>The launcher mentions a server-list ping not being answered.</b> That's normal and harmless: Minekube's tunnel carries players but doesn't always reply to server-list pings from the host PC itself. Your server is still online. Have a friend add the address and join.</li>
             <li><b>A friend plays Bedrock</b> (phone, console, or the Windows Bedrock app). MZForge servers are Java Edition only for now.</li>
           </ul></section>
 
         <section id="h-branded"><h2>The .mc.mzforge.com address</h2>
           <p>Each server reserves a name like yourname.mc.mzforge.com. It's set up on our side but isn't live yet: Minekube currently needs a manual step for every custom domain, and there's no way for us to automate it. We're working with them on that.</p>
-          <p>Until then, share the address shown on your server page, for example <b>mzf-friday.play.minekube.net</b>. The readable part comes from the server name you chose, and MZForge remembers its tunnel identity automatically.</p></section>
+          <p>Until then, share the address that starts with mzf- and ends in play.minekube.net. It works today and will keep working. When the branded address goes live, you won't need to change anything or download again.</p></section>
 
         <section id="h-world"><h2>Your world and backups</h2>
           <p>Everything lives in the folder you unzipped: the world, settings, plugins, and mods. To back it up, stop the launcher and copy the folder. Deleting a server on this site doesn't touch those files.</p>

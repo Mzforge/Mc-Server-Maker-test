@@ -53,15 +53,12 @@ Every change you commit to GitHub goes live automatically.
   PaperMC or FabricMC, resolved by the Worker and checksum-verified) and,
   if the PC lacks the right Java, a private Temurin runtime into a
   `runtime` folder. Downloads are restricted to those vendors' own hosts.
-- **Headless Minekube Connect:** modern Paper servers use Minekube's official
-  Connect Java plugin directly (`Connect -> Paper`). The launcher downloads
-  `connect-spigot.jar`, writes `plugins/connect/config.yml`, sets Minekube's
-  required Paper `connection-throttle: -1`, and backs up the generated
-  `plugins/connect/token.json` to MZForge automatically. Cracked mode maps to
-  `allow-offline-mode-players: true`, so players can use the normal readable
-  `<endpoint>.play.minekube.net` address directly. Vanilla, Fabric, and older
-  Paper versions keep the Gate connector fallback. End users never create a
-  Minekube account, endpoint, or token.
+- **Minecraft behind Gate:** per Minekube's connector docs, the backend
+  runs `online-mode=false` + `enforce-secure-profile=false` and Gate
+  (standard mode, not Lite) does the account checking, driven by the
+  account type set on the website. An optional per-server Connect token is
+  written to `connect.json`; the launcher explains how to get one if
+  Minekube refuses the registration.
 - **Appearance:** server name and an optional second line, each with a
   Minecraft colour, shown live in a server-list preview. Stored as one
   motd with colour codes and a newline.
@@ -88,14 +85,3 @@ new settings with defaults and a fresh 30 days.
 - **Deploy error about "database_id"?** Storage & Databases → D1 → Create,
   name it `mzforge`, copy its ID, and add `database_id = "the-id"` under
   `database_name = "mzforge"` in wrangler.toml.
-
-
-## Readable Minekube endpoints
-
-MZForge uses the server slug as the Connect endpoint. A server created as
-`friday` uses `mzf-friday.play.minekube.net`. Minekube documents endpoint
-names as configurable human-readable identifiers; MZForge adds the `mzf-`
-prefix to reduce collisions with unrelated endpoints. The launcher persists
-the endpoint token automatically and checks reachability from both the local PC
-and the Worker. Modern Paper uses the official Connect plugin directly; Gate is
-only the fallback connector for Vanilla, Fabric, and older Paper versions.

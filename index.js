@@ -51,6 +51,7 @@ const ADDED_COLUMNS = {
   view_distance: `INTEGER NOT NULL DEFAULT 10`,
   simulation_distance: `INTEGER NOT NULL DEFAULT 10`,
   connect_token: `TEXT NOT NULL DEFAULT ''`,
+  probe_fails: `INTEGER NOT NULL DEFAULT 0`,
   ram_mb: `INTEGER NOT NULL DEFAULT 4096`,
   port: `INTEGER NOT NULL DEFAULT 25565`,
   whitelist: `INTEGER NOT NULL DEFAULT 0`,
@@ -203,6 +204,11 @@ function parseSettings(req) {
     if (!Number.isInteger(n) || n < min || n > max) return [null, `${field.replace("_", " ")} must be a whole number from ${min} to ${max}`];
     u[field] = n;
   }
+  if ("connect_token" in req) {
+    const t = String(req.connect_token ?? "").trim();
+    if (t && !/^[\w.\-]{8,300}$/.test(t)) return [null, "that doesn't look like a Minekube Connect token"];
+    u.connect_token = t;
+  }
   if ("ram_mb" in req) {
     const n = Number(req.ram_mb);
     if (!Number.isInteger(n) || n < 1024 || n > 32768 || n % 256 !== 0) return [null, "memory must be between 1 GB and 32 GB"];
@@ -339,10 +345,10 @@ function managedProperties(rec) {
     "simulation-distance": String(rec.simulation_distance || 10),
     "white-list": rec.whitelist ? "true" : "false",
     "enforce-whitelist": rec.whitelist ? "true" : "false",
-    // Modern Paper is exposed by Minekube's official Connect plugin; other
-    // loaders use the Gate connector fallback. Keeping the backend offline
-    // with secure-profile enforcement disabled is compatible with both paths;
-    // the endpoint policy decides whether cracked Java players are accepted.
+    // Minecraft sits behind Gate (the Minekube Connect tunnel), and Gate
+    // does the account checking. Minekube's docs require the backend
+    // itself to be offline-mode with secure-profile enforcement off;
+    // whether real accounts are required is set on Gate instead.
     "online-mode": "false",
     "enforce-secure-profile": "false",
   };
@@ -366,14 +372,6 @@ async function slugTaken(env, slug) {
   ).bind(slug).first();
   return !!r;
 }
-
-// Minekube documents the endpoint name as a configurable, human-readable
-// identifier and uses it directly in <endpoint>.play.minekube.net. Keep the
-// public address tied to the server slug users chose on MZForge.
-// The "mzf-" namespace prefix greatly reduces collisions with unrelated
-// Minekube endpoints while keeping the address readable.
-const headlessEndpoint = (slug) => `mzf-${String(slug).toLowerCase()}`;
-const minekubeHostname = (endpoint) => `${endpoint}.play.minekube.net`;
 
 // ---------------------------------------------------------------- mods & plugins (Modrinth)
 //
@@ -630,17 +628,6 @@ async function cfCreateCNAME(env, name, target, comment) {
   return r.result.id;
 }
 
-async function cfUpdateCNAME(env, id, name, target, comment) {
-  if (testMode(env) || !id || id === "test-mode-no-record") return;
-  const res = await fetch(`https://api.cloudflare.com/client/v4/zones/${env.CF_ZONE_ID}/dns_records/${id}`, {
-    method: "PUT",
-    headers: { Authorization: `Bearer ${env.CF_API_TOKEN}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ type: "CNAME", name, content: target, ttl: 1, proxied: false, comment }),
-  });
-  const r = await res.json().catch(() => ({}));
-  if (!r.success) throw new Error(r.errors?.[0]?.message || `Cloudflare HTTP ${res.status}`);
-}
-
 async function cfDeleteRecord(env, id) {
   if (testMode(env) || !id || id === "test-mode-no-record") return;
   const res = await fetch(`https://api.cloudflare.com/client/v4/zones/${env.CF_ZONE_ID}/dns_records/${id}`, {
@@ -664,26 +651,46 @@ async function cfDeleteRecord(env, id) {
 // connect to that address at all, we can't check, so we trust the
 // launcher's announcement rather than wrongly showing "offline".
 
+const HEARTBEAT_GRACE_MS = 3 * 60 * 1000;
+
 async function liveStatus(env, rec) {
   if (rec.status === "offline") return { status: "offline" };
   if (rec.status !== "online") return { status: "never_started" };
+
+  // The launcher checks in every minute while it runs, so a recent
+  // check-in is the truth. Pinging the public address is unreliable here:
+  // Minekube's tunnel carries players but doesn't always answer
+  // server-list pings, which made running servers look offline.
+  const since = Date.now() - Date.parse(rec.last_seen || 0);
+  if (since >= 0 && since < HEARTBEAT_GRACE_MS) {
+    return { status: "online", version: rec.verified_version };
+  }
+
   if (env.LIVE_PING === "false") return { status: "online", version: rec.verified_version };
 
   if (Date.now() - rec.checked_at < 30_000 && rec.live_status) {
     return { status: rec.live_status, version: rec.live_version };
   }
-  let status = "offline", version = "";
+  // Minekube's edge can be slow to answer, especially for a newly
+  // registered endpoint, so: a generous timeout, and one failed ping isn't
+  // enough to call a server offline — two in a row are.
+  let status = "offline", version = "", fails = (rec.probe_fails || 0) + 1;
   try {
-    const r = await mcPing(rec.hostname, 25565, 4000);
+    const r = await mcPing(rec.hostname, 25565, 10000);
     if (!rec.verified_version || r.versionName === rec.verified_version) {
       status = "online";
       version = r.versionName;
+      fails = 0;
     }
   } catch (e) {
-    if (e.unreachableFromWorkers) { status = "online"; version = rec.verified_version; }
+    if (e.unreachableFromWorkers) { status = "online"; version = rec.verified_version; fails = 0; }
   }
-  await env.DB.prepare(`UPDATE servers SET live_status = ?1, live_version = ?2, checked_at = ?3 WHERE server_id = ?4`)
-    .bind(status, version, Date.now(), rec.server_id).run();
+  if (status === "offline" && fails < 2) {
+    status = "online"; // still trusting the launcher's own report for now
+    version = rec.verified_version;
+  }
+  await env.DB.prepare(`UPDATE servers SET live_status = ?1, live_version = ?2, checked_at = ?3, probe_fails = ?4 WHERE server_id = ?5`)
+    .bind(status, version, Date.now(), fails, rec.server_id).run();
   return { status, version };
 }
 
@@ -717,6 +724,7 @@ async function view(env, rec, owned) {
       whitelist: !!rec.whitelist,
       view_distance: rec.view_distance,
       simulation_distance: rec.simulation_distance,
+      connect_token: rec.connect_token || "",
       whitelist_players: parseList(rec.whitelist_players).map((p) => p.name),
       ops: parseList(rec.ops).map((p) => p.name),
       online_mode: !!rec.online_mode,
@@ -801,10 +809,7 @@ your server page. The launcher applies them each time it starts.
   const extra = {};
   const wl = await playerFileEntries(rec, "whitelist_players");
   const ops = await playerFileEntries(rec, "ops");
-  if (rec.connect_token) {
-    const tokenPath = rec.loader === "paper" ? "plugins/connect/token.json" : "connect.json";
-    extra[tokenPath] = JSON.stringify({ token: rec.connect_token }, null, 2);
-  }
+  if (rec.connect_token) extra["connect.json"] = JSON.stringify({ token: rec.connect_token }, null, 2);
   if (wl.length) extra["whitelist.json"] = JSON.stringify(wl, null, 2);
   if (ops.length) extra["ops.json"] = JSON.stringify(ops, null, 2);
   return {
@@ -888,11 +893,10 @@ async function handleAllocate(request, env, url) {
     manage_key_hash: await sha256Hex(manageKey),
     slug,
     display_name: displayName,
-    // Use the readable server slug for the Minekube endpoint, as documented
-    // by Minekube. Example: server name/slug "friday" ->
-    // mzf-friday.play.minekube.net.
-    connect_endpoint: headlessEndpoint(slug),
-    hostname: minekubeHostname(headlessEndpoint(slug)),
+    // The join address is built from the chosen name. The "mzf-" prefix keeps
+    // us clear of names other Minekube users pick. serverId stays random.
+    connect_endpoint: `mzf-${slug}`,
+    hostname: `mzf-${slug}.play.minekube.net`,
     custom_hostname: `${slug}.mc.${domain}`,
     loader,
     mc_version: mcVersion,
@@ -1054,64 +1058,6 @@ async function launcherAuth(request, env, serverId) {
   return [rec, null];
 }
 
-// A short-lived test build used mzf-<random hex> endpoint names. Minekube's
-// documented model is a configurable human-readable endpoint name, so migrate
-// only those generated numeric endpoints back to mzf-<server-slug>. Changing
-// an endpoint requires a fresh endpoint token, therefore the old token is
-// deliberately cleared during this one-time migration. Human-readable legacy
-// endpoints (for example mzf-friday) are left untouched.
-async function ensureHeadlessEndpoint(env, rec) {
-  const endpoint = headlessEndpoint(rec.slug);
-  const hostname = minekubeHostname(endpoint);
-  const oldGeneratedEndpoint = /^mzf-[0-9a-f]{12,16}$/i.test(String(rec.connect_endpoint || ""));
-
-  if (!oldGeneratedEndpoint) return rec;
-  if (rec.connect_endpoint === endpoint && rec.hostname === hostname) return rec;
-
-  // The branded CNAME is not required for the raw Minekube address, so a DNS
-  // update failure must never stop the server from migrating and starting.
-  try {
-    await cfUpdateCNAME(env, rec.cf_record_id, rec.custom_hostname, hostname, `MZForge server ${rec.server_id}`);
-  } catch (e) {
-    console.log(`endpoint migration ${rec.server_id}: CNAME update failed: ${e.message}`);
-  }
-  await env.DB.prepare(`UPDATE servers SET connect_endpoint = ?1, hostname = ?2, connect_token = '' WHERE server_id = ?3`)
-    .bind(endpoint, hostname, rec.server_id).run();
-  rec.connect_endpoint = endpoint;
-  rec.hostname = hostname;
-  rec.connect_token = "";
-  return rec;
-}
-
-// Headless token persistence. Modern Paper's Connect plugin generates
-// plugins/connect/token.json; Gate uses connect.json for the fallback path.
-// The launcher sends either endpoint token here using its per-server secret.
-// Users never need a Minekube account, dashboard, or manual token field.
-async function handleLauncherConnectToken(request, env) {
-  let req;
-  try { req = await readJSON(request); } catch { return err(400, "invalid JSON body"); }
-  const [rec, fail] = await launcherAuth(request, env, req?.server_id);
-  if (fail) return fail;
-  const endpoint = String(req?.connect_endpoint || "").trim();
-  const token = String(req?.connect_token || "").trim();
-  if (endpoint !== rec.connect_endpoint) return err(409, "endpoint changed; refresh server settings and retry");
-  if (!/^[A-Za-z0-9._-]{8,300}$/.test(token)) return err(400, "invalid Connect token");
-  if (rec.connect_token && !safeEqual(rec.connect_token, token)) {
-    return err(409, "this server already has a different endpoint token");
-  }
-  if (!rec.connect_token) {
-    const saved = await env.DB.prepare(`UPDATE servers SET connect_token = ?1 WHERE server_id = ?2 AND connect_token = ''`)
-      .bind(token, rec.server_id).run();
-    if (!(saved.meta?.changes > 0)) {
-      const latest = await env.DB.prepare(`SELECT connect_token FROM servers WHERE server_id = ?1`).bind(rec.server_id).first();
-      if (!latest?.connect_token || !safeEqual(latest.connect_token, token)) {
-        return err(409, "this server already has a different endpoint token");
-      }
-    }
-  }
-  return noContent();
-}
-
 async function handleAnnounce(request, env) {
   let req;
   try { req = await readJSON(request); } catch { return err(400, "invalid JSON body"); }
@@ -1123,7 +1069,7 @@ async function handleAnnounce(request, env) {
   await env.DB.prepare(
     `UPDATE servers SET status = ?1, last_seen = ?2,
        verified_version = CASE WHEN ?3 != '' THEN ?3 ELSE verified_version END,
-       checked_at = 0, live_status = '',
+       checked_at = 0, live_status = '', probe_fails = 0,
        expires_at = CASE WHEN ?1 = 'online' AND expires_at > ?2 AND expires_at < ?5 THEN ?5 ELSE expires_at END
      WHERE server_id = ?4`
   ).bind(req.status, now(), String(req.verified_version || ""), rec.server_id, inDays(RENEW_DAYS)).run();
@@ -1136,10 +1082,9 @@ async function handleAnnounce(request, env) {
 async function handleLauncherCheck(request, env, url) {
   let req;
   try { req = await readJSON(request); } catch { return err(400, "invalid JSON body"); }
-  let [rec, fail] = await launcherAuth(request, env, req?.server_id);
+  const [rec, fail] = await launcherAuth(request, env, req?.server_id);
   if (fail) return fail.status === 404 ? err(404, "this server no longer exists: it was deleted, or expired and was removed") : fail;
   if (isExpired(rec)) return json({ error: "expired", expired: true, expires_at: rec.expires_at }, 403);
-  rec = await ensureHeadlessEndpoint(env, rec);
   return json({
     expires_at: rec.expires_at,
     days_left: daysLeft(rec),
@@ -1148,10 +1093,8 @@ async function handleLauncherCheck(request, env, url) {
     mods: parseMods(rec).map(({ title, filename, url, sha512 }) => ({ title, filename, url, sha512 })),
     website: webBase(env, url),
     ram: `${rec.ram_mb || 4096}M`,
-    online_mode: !!rec.online_mode,   // connector endpoint policy: false allows cracked Java
+    online_mode: !!rec.online_mode,   // Gate enforces this, not server.properties
     connect_token: rec.connect_token || "",
-    hostname: rec.hostname,
-    connect_endpoint: rec.connect_endpoint,
     port: rec.port || 25565,
     icon_png: rec.icon || "",
     whitelist: await playerFileEntries(rec, "whitelist_players"),
@@ -1160,6 +1103,24 @@ async function handleLauncherCheck(request, env, url) {
     server_jar: await resolveJar(env, rec.loader, rec.mc_version),
     java: { major: javaMajor(rec.mc_version), url: javaDownload(env, javaMajor(rec.mc_version)) },
   });
+}
+
+// The Connect plugin/Gate writes its own endpoint token on first run. The
+// launcher sends it here so future downloads of the same server reconnect
+// to the same tunnel identity without the user doing anything.
+async function handleConnectToken(request, env) {
+  let req;
+  try { req = await readJSON(request); } catch { return err(400, "invalid JSON body"); }
+  const [rec, fail] = await launcherAuth(request, env, req?.server_id);
+  if (fail) return fail;
+  const token = String(req?.connect_token || "").trim();
+  if (!/^[\w.\-]{8,300}$/.test(token)) return err(400, "that doesn't look like a Connect token");
+  if (req.connect_endpoint && req.connect_endpoint !== rec.connect_endpoint) {
+    return err(400, "that token belongs to a different endpoint");
+  }
+  if (rec.connect_token === token) return new Response(null, { status: 204 });
+  await env.DB.prepare(`UPDATE servers SET connect_token = ?1 WHERE server_id = ?2`).bind(token, rec.server_id).run();
+  return new Response(null, { status: 204 });
 }
 
 async function handleProbe(request, env) {
@@ -1184,7 +1145,7 @@ async function handleSlugAvailable(request, env, url) {
   const problem = slugProblem(slug);
   if (problem) return json({ slug, available: false, reason: problem });
   if (await slugTaken(env, slug)) return json({ slug, available: false, reason: "already taken" });
-  return json({ slug, available: true, join_address: null });
+  return json({ slug, available: true, join_address: `mzf-${slug}.play.minekube.net` });
 }
 
 async function handleVersions() {
@@ -1288,7 +1249,7 @@ export default {
       if (p === "/meta/mode" && m === "GET") return json({ test_mode: testMode(env) });
       if (p === "/modfile" && m === "GET") return await handleModFile(request, env, url);
       if (p === "/launcher/check" && m === "POST") return await handleLauncherCheck(request, env, url);
-      if (p === "/launcher/connect-token" && m === "POST") return await handleLauncherConnectToken(request, env);
+      if (p === "/launcher/connect-token" && m === "POST") return await handleConnectToken(request, env);
 
       const im = p.match(/^\/servers\/([a-f0-9]{16})\/icon\.png$/);
       if (im && m === "GET") return await handleIconPNG(request, env, url, im[1]);
