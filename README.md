@@ -87,3 +87,8 @@ new settings with defaults and a fresh 30 days.
 - **Deploy error about "database_id"?** Storage & Databases → D1 → Create,
   name it `mzforge`, copy its ID, and add `database_id = "the-id"` under
   `database_name = "mzforge"` in wrangler.toml.
+
+
+## V4 cracked-access default
+
+New servers default to **Premium + cracked**. Paper uses the Minekube Connect plugin with Paper itself in online mode; `allow-offline-mode-players` controls cracked/offline access. Existing servers keep their saved account policy: if a debug log says `account-mode=official-only`, switch Account type to **Premium + cracked**, save, and restart the launcher.
