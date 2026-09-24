@@ -527,7 +527,7 @@ async function saveDownload(dl, progress = () => {}) {
   if (!launcherBytes) {
     progress("Getting launcher…");
     let res;
-    try { res = await fetch("MZForgeLauncher.exe"); } catch { res = null; }
+    try { res = await fetch("MZForgeLauncher.exe?v=20260924-paper-direct-3-debug", { cache: "no-store" }); } catch { res = null; }
     if (!res || !res.ok) throw new Error("Couldn't load MZForgeLauncher.exe. Check it's in the same folder as index.html on the site.");
     launcherBytes = new Uint8Array(await res.arrayBuffer());
   }
@@ -1898,7 +1898,8 @@ function viewHelp(anchor) {
         <section id="h-tunnel"><h2>If the tunnel is refused</h2>
           <p>Players reach your PC through <a href="https://connect.minekube.com" target="_blank" rel="noopener">Minekube Connect</a>, a free tunnel network. You don't need an account: the first time your server starts, Minekube gives that address its own token and the launcher saves it, both in the server folder and on MZForge, so re-downloads reconnect to the same address.</p>
           <p>If the launcher says Minekube refused the registration, the usual cause is the address name already belonging to someone else's token. Create a new server with a different name, or ask us to look into it.</p>
-          <p>A "server-list ping wasn't answered" note is not a failure: Minekube's tunnel doesn't always answer pings even while players can join normally. That's why your server page uses the launcher's own check-ins for online status, not pings.</p></section>
+          <p>A "server-list ping wasn't answered" note is not a failure: Minekube's tunnel doesn't always answer pings even while players can join normally. That's why your server page uses the launcher's own check-ins for online status, not pings.</p>
+          <p><b>Need support?</b> Every launcher run creates <b>MZForge-Debug.log</b> in the server folder and appends to <b>MZForge-Debug-History.log</b>. These contain the launcher, Paper and Minekube Connect console output with MZForge tokens redacted. Send MZForge-Debug.log when reporting a problem.</p></section>
 
         <section id="h-troubleshooting"><h2>Friends can't join</h2>
           <ul>

@@ -165,6 +165,14 @@ function cleanName(raw) {
 
 const LOADERS = new Set(["vanilla", "paper", "fabric"]);
 
+// Paper uses Minekube's official in-server Connect plugin by default. Gate is
+// reserved for loaders that cannot host that plugin. Keep this decision on the
+// server side so old D1 rows with connector=gate cannot make new downloads pick
+// the wrong topology.
+function effectiveConnector(rec) {
+  return rec?.loader === "paper" ? "plugin" : "gate";
+}
+
 // ---------------------------------------------------------------- server settings
 
 const GAMEMODES = new Set(["survival", "creative", "adventure"]);
@@ -356,7 +364,7 @@ function managedProperties(rec) {
     // allow-offline-mode-players opt-in. Gate, on the other hand, proxies
     // into an offline-mode backend. The website account-type switch remains
     // rec.online_mode; it is NOT the same thing as Paper's online-mode.
-    "online-mode": (rec.loader === "paper" && rec.connector === "plugin") ? "true" : "false",
+    "online-mode": effectiveConnector(rec) === "plugin" ? "true" : "false",
     "enforce-secure-profile": "false",
   };
 }
@@ -732,7 +740,7 @@ async function view(env, rec, owned) {
       view_distance: rec.view_distance,
       simulation_distance: rec.simulation_distance,
       connect_token: rec.connect_token || "",
-      connector: rec.connector || "gate",
+      connector: effectiveConnector(rec),
       whitelist_players: parseList(rec.whitelist_players).map((p) => p.name),
       ops: parseList(rec.ops).map((p) => p.name),
       online_mode: !!rec.online_mode,
@@ -759,7 +767,7 @@ async function downloadFiles(rec, apiBase, jar, manageURL, webURL) {
     `api-base=${apiBase}\nconnect-endpoint=${rec.connect_endpoint}\nloader=${rec.loader}\nmc-version=${rec.mc_version}\n` +
     `renew-url=${manageURL}\nweb-url=${webURL}\n` +
     `online-mode=${rec.online_mode ? "true" : "false"}\n` +
-    `connector=${rec.connector || "gate"}\n`;
+    `connector=${effectiveConnector(rec)}\n`;
   const mods = parseMods(rec);
   const folder = modsFolder(rec.loader);
   const modsNote = mods.length
@@ -788,6 +796,12 @@ it), you can put one in this folder by hand and start the launcher again:
 
 Your server only exists while MZForgeLauncher.exe is running on this PC.
 Closing the window (or shutting down / sleeping the PC) takes it offline.
+
+IF SOMETHING GOES WRONG
+The launcher automatically creates MZForge-Debug.log in this folder for the
+current run and MZForge-Debug-History.log for earlier runs. They include the
+launcher, Minecraft/Paper and Minekube Connect errors. MZForge secrets are
+redacted automatically. Send MZForge-Debug.log when asking for support.
 
 STAYING ACTIVE
 Your address is held for 30 days at a time. It renews by itself whenever
@@ -913,7 +927,7 @@ async function handleAllocate(request, env, url) {
     created_at: now(),
     expires_at: inDays(RENEW_DAYS),
     max_players: 20, pvp: 1, gamemode: "survival", difficulty: "easy", motd: "", mods: "[]",
-    view_distance: 10, simulation_distance: 10, connect_token: "", connector: "gate",
+    view_distance: 10, simulation_distance: 10, connect_token: "", connector: loader === "paper" ? "plugin" : "gate",
     ram_mb: 4096, port: 25565, whitelist: 0, whitelist_players: "[]", ops: "[]", online_mode: 1, icon: "",
   };
 
@@ -1102,9 +1116,9 @@ async function handleLauncherCheck(request, env, url) {
     mods: parseMods(rec).map(({ title, filename, url, sha512 }) => ({ title, filename, url, sha512 })),
     website: webBase(env, url),
     ram: `${rec.ram_mb || 4096}M`,
-    online_mode: !!rec.online_mode,   // Gate enforces this, not server.properties
+    online_mode: !!rec.online_mode,   // account policy; Connect plugin handles cracked opt-in on Paper
     connect_token: rec.connect_token || "",
-    connector: rec.connector || "gate",
+    connector: effectiveConnector(rec),
     port: rec.port || 25565,
     icon_png: rec.icon || "",
     whitelist: await playerFileEntries(rec, "whitelist_players"),
