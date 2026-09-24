@@ -1037,6 +1037,9 @@ function basicsHTML(cfg) {
       <div class="field" style="margin-top:10px"><label for="b-token">Minekube Connect token</label>
         <input id="b-token" type="text" autocomplete="off" spellcheck="false" value="${esc(cfg.connect_token || "")}" placeholder="Only needed if the launcher asks for one">
         <div class="hint">Minekube runs the tunnel that carries players to your PC. If the launcher says the tunnel was refused, sign in at <a href="https://app.minekube.com" target="_blank" rel="noopener">app.minekube.com</a>, create an endpoint named exactly <b>mzf-${esc(cfg.slug || "yourname")}</b>, and paste its token here.</div></div>
+      <div class="field" style="margin-top:10px"><span class="label">Tunnel connector</span>
+        ${segHTML("connector", [["gate", "Gate (default)"], ["plugin", "In-server plugin"]], cfg.connector || "gate")}
+        <div class="hint">How players are carried to your PC. Gate is the tested path. The in-server plugin skips the extra program, but on our tests Minekube didn't route players to it. Paper only; other software always uses Gate.</div></div>
       <div class="field" style="margin-top:10px"><label for="b-port">Local port</label>
         <input id="b-port" type="text" inputmode="numeric" value="${esc(cfg.port)}" style="max-width:180px">
         <div class="hint">The port Minecraft uses on your own PC. Leave it at 25565 unless another server on this PC already uses it. Friends never need it.</div></div>
@@ -1107,6 +1110,8 @@ function wireBasics(root, cfg, onChange) {
   wireSeg(root, "pvp", v => { cfg.pvp = v === "true"; onChange(); });
   wireSeg(root, "gamemode", v => { cfg.gamemode = v; onChange(); });
   wireSeg(root, "difficulty", v => { cfg.difficulty = v; onChange(); });
+  const connSeg = root.querySelector('[data-seg="connector"]');
+  if (connSeg) wireSeg(root, "connector", v => { cfg.connector = v; });
   wireSeg(root, "whitelist", v => { cfg.whitelist = v === "true"; root.querySelector("#b-wl").hidden = !cfg.whitelist; onChange(); });
   wireSeg(root, "online", v => {
     cfg.online_mode = v === "true";
@@ -1325,7 +1330,7 @@ function settingsPayload(cfg) {
     difficulty: cfg.difficulty, ram_mb: cfg.ram_mb, port: cfg.port, whitelist: !!cfg.whitelist,
     whitelist_players: cfg.whitelist_players, ops: cfg.ops, online_mode: !!cfg.online_mode,
     view_distance: cfg.view_distance ?? 10, simulation_distance: cfg.simulation_distance ?? 10,
-    connect_token: cfg.connect_token || "",
+    connect_token: cfg.connect_token || "", connector: cfg.connector || "gate",
   };
 }
 
@@ -1347,7 +1352,7 @@ async function viewCreate() {
     step: 0, name: "", slug: "", slugEdited: false, slugOK: false, loader: "paper", version: "", versions: [], eula: null, accepted: false,
     max_players: 10, ram_mb: 0, ramTouched: false, port: 25565, pvp: true, gamemode: "survival", difficulty: "normal",
     whitelist: false, whitelist_players: [], ops: [], online_mode: true, motd: "", iconPNG: "", addons: [],
-    view_distance: 10, simulation_distance: 10, connect_token: "",
+    view_distance: 10, simulation_distance: 10, connect_token: "", connector: "gate",
   };
   cfg.ram_mb = recommendRam(cfg.loader, cfg.max_players, 0);
   $app.innerHTML = `<div class="wrap"><p class="muted">Loading…</p></div>`;

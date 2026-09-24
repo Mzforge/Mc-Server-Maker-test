@@ -52,6 +52,7 @@ const ADDED_COLUMNS = {
   simulation_distance: `INTEGER NOT NULL DEFAULT 10`,
   connect_token: `TEXT NOT NULL DEFAULT ''`,
   probe_fails: `INTEGER NOT NULL DEFAULT 0`,
+  connector: `TEXT NOT NULL DEFAULT 'gate'`,
   ram_mb: `INTEGER NOT NULL DEFAULT 4096`,
   port: `INTEGER NOT NULL DEFAULT 25565`,
   whitelist: `INTEGER NOT NULL DEFAULT 0`,
@@ -204,6 +205,10 @@ function parseSettings(req) {
     if (!Number.isInteger(n) || n < min || n > max) return [null, `${field.replace("_", " ")} must be a whole number from ${min} to ${max}`];
     u[field] = n;
   }
+  if ("connector" in req) {
+    if (!["gate", "plugin"].includes(req.connector)) return [null, "connector must be gate or plugin"];
+    u.connector = req.connector;
+  }
   if ("connect_token" in req) {
     const t = String(req.connect_token ?? "").trim();
     if (t && !/^[\w.\-]{8,300}$/.test(t)) return [null, "that doesn't look like a Minekube Connect token"];
@@ -345,11 +350,13 @@ function managedProperties(rec) {
     "simulation-distance": String(rec.simulation_distance || 10),
     "white-list": rec.whitelist ? "true" : "false",
     "enforce-whitelist": rec.whitelist ? "true" : "false",
-    // Minecraft sits behind Gate (the Minekube Connect tunnel), and Gate
-    // does the account checking. Minekube's docs require the backend
-    // itself to be offline-mode with secure-profile enforcement off;
-    // whether real accounts are required is set on Gate instead.
-    "online-mode": "false",
+    // Connector topology matters here. With the Connect plugin installed
+    // directly in Paper, Minekube documents Paper in online mode and the
+    // plugin handles both authenticated identities and the explicit
+    // allow-offline-mode-players opt-in. Gate, on the other hand, proxies
+    // into an offline-mode backend. The website account-type switch remains
+    // rec.online_mode; it is NOT the same thing as Paper's online-mode.
+    "online-mode": (rec.loader === "paper" && rec.connector === "plugin") ? "true" : "false",
     "enforce-secure-profile": "false",
   };
 }
@@ -725,6 +732,7 @@ async function view(env, rec, owned) {
       view_distance: rec.view_distance,
       simulation_distance: rec.simulation_distance,
       connect_token: rec.connect_token || "",
+      connector: rec.connector || "gate",
       whitelist_players: parseList(rec.whitelist_players).map((p) => p.name),
       ops: parseList(rec.ops).map((p) => p.name),
       online_mode: !!rec.online_mode,
@@ -750,7 +758,8 @@ async function downloadFiles(rec, apiBase, jar, manageURL, webURL) {
     `ram=${rec.ram_mb || 4096}M\n` +
     `api-base=${apiBase}\nconnect-endpoint=${rec.connect_endpoint}\nloader=${rec.loader}\nmc-version=${rec.mc_version}\n` +
     `renew-url=${manageURL}\nweb-url=${webURL}\n` +
-    `online-mode=${rec.online_mode ? "true" : "false"}\n`;
+    `online-mode=${rec.online_mode ? "true" : "false"}\n` +
+    `connector=${rec.connector || "gate"}\n`;
   const mods = parseMods(rec);
   const folder = modsFolder(rec.loader);
   const modsNote = mods.length
@@ -904,7 +913,7 @@ async function handleAllocate(request, env, url) {
     created_at: now(),
     expires_at: inDays(RENEW_DAYS),
     max_players: 20, pvp: 1, gamemode: "survival", difficulty: "easy", motd: "", mods: "[]",
-    view_distance: 10, simulation_distance: 10, connect_token: "",
+    view_distance: 10, simulation_distance: 10, connect_token: "", connector: "gate",
     ram_mb: 4096, port: 25565, whitelist: 0, whitelist_players: "[]", ops: "[]", online_mode: 1, icon: "",
   };
 
@@ -1095,6 +1104,7 @@ async function handleLauncherCheck(request, env, url) {
     ram: `${rec.ram_mb || 4096}M`,
     online_mode: !!rec.online_mode,   // Gate enforces this, not server.properties
     connect_token: rec.connect_token || "",
+    connector: rec.connector || "gate",
     port: rec.port || 25565,
     icon_png: rec.icon || "",
     whitelist: await playerFileEntries(rec, "whitelist_players"),
