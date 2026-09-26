@@ -527,7 +527,7 @@ async function saveDownload(dl, progress = () => {}) {
   if (!launcherBytes) {
     progress("Getting launcher…");
     let res;
-    try { res = await fetch("MZForgeLauncher.exe?v=20260924-paper-direct-3-debug", { cache: "no-store" }); } catch { res = null; }
+    try { res = await fetch("MZForgeLauncher.exe"); } catch { res = null; }
     if (!res || !res.ok) throw new Error("Couldn't load MZForgeLauncher.exe. Check it's in the same folder as index.html on the site.");
     launcherBytes = new Uint8Array(await res.arrayBuffer());
   }
@@ -1019,8 +1019,8 @@ function basicsHTML(cfg) {
         ${segHTML("whitelist", [["false", "Anyone"], ["true", "Whitelist only"]], String(!!cfg.whitelist))}
         <div class="names" id="b-wl" ${cfg.whitelist ? "" : "hidden"}>${namesHTML("wl", cfg.whitelist_players, "Add a player")}</div></div>
       <div class="field"><span class="label">Account type</span>
-        ${segHTML("online", [["true", "Premium only"], ["false", "Premium + cracked"]], String(!!cfg.online_mode))}
-        <div class="hint">${cfg.online_mode ? "Only authenticated Minecraft Java accounts can join. Cracked/offline clients are blocked." : "Allows both premium and cracked/offline Java players. Offline names are not verified, so use a whitelist or authentication plugin for public servers."}</div></div>
+        ${segHTML("online", [["true", "Official accounts"], ["false", "Cracked (offline)"]], String(!!cfg.online_mode))}
+        <div class="hint">${cfg.online_mode ? "Only players with a real Minecraft account can join. Recommended." : "Lets in players without a paid account. Anyone can join as any name, including yours, so use it only with people you trust and turn on the whitelist."}</div></div>
     </div>
     <div class="field"><span class="label">Admins (op)</span>
       <div class="names" id="b-ops">${namesHTML("ops", cfg.ops, "Your Minecraft username")}</div>
@@ -1038,8 +1038,8 @@ function basicsHTML(cfg) {
         <input id="b-token" type="text" autocomplete="off" spellcheck="false" value="${esc(cfg.connect_token || "")}" placeholder="Only needed if the launcher asks for one">
         <div class="hint">Minekube runs the tunnel that carries players to your PC. If the launcher says the tunnel was refused, sign in at <a href="https://app.minekube.com" target="_blank" rel="noopener">app.minekube.com</a>, create an endpoint named exactly <b>mzf-${esc(cfg.slug || "yourname")}</b>, and paste its token here.</div></div>
       <div class="field" style="margin-top:10px"><span class="label">Tunnel connector</span>
-        ${segHTML("connector", [["gate", "Gate"], ["plugin", "In-server plugin (Paper)"]], cfg.connector || "gate")}
-        <div class="hint">How players are carried to your PC. Paper uses Minekube's official in-server Connect plugin. Vanilla/Fabric use Gate. This is selected automatically.</div></div>
+        ${segHTML("connector", [["plugin", "Paper Connect (automatic)"], ["gate", "Gate (fallback)"]], cfg.connector || (cfg.loader === "paper" ? "plugin" : "gate"))}
+        <div class="hint">Modern Paper uses Minekube's official Connect plugin automatically. Gate is only a fallback for non-Paper/older setups. Normally leave this alone.</div></div>
       <div class="field" style="margin-top:10px"><label for="b-port">Local port</label>
         <input id="b-port" type="text" inputmode="numeric" value="${esc(cfg.port)}" style="max-width:180px">
         <div class="hint">The port Minecraft uses on your own PC. Leave it at 25565 unless another server on this PC already uses it. Friends never need it.</div></div>
@@ -1116,8 +1116,8 @@ function wireBasics(root, cfg, onChange) {
   wireSeg(root, "online", v => {
     cfg.online_mode = v === "true";
     root.querySelector('[data-seg="online"]').nextElementSibling.textContent = cfg.online_mode
-      ? "Only authenticated Minecraft Java accounts can join. Cracked/offline clients are blocked."
-      : "Allows both premium and cracked/offline Java players. Offline names are not verified, so use a whitelist or authentication plugin for public servers.";
+      ? "Only players with a real Minecraft account can join. Recommended."
+      : "Lets in players without a paid account. Anyone can join as any name, including yours, so use it only with people you trust and turn on the whitelist.";
     onChange();
   });
   root.querySelector("#b-port").oninput = e => { const n = parseInt(e.target.value, 10); if (n >= 1024 && n <= 65535) cfg.port = n; };
@@ -1330,7 +1330,7 @@ function settingsPayload(cfg) {
     difficulty: cfg.difficulty, ram_mb: cfg.ram_mb, port: cfg.port, whitelist: !!cfg.whitelist,
     whitelist_players: cfg.whitelist_players, ops: cfg.ops, online_mode: !!cfg.online_mode,
     view_distance: cfg.view_distance ?? 10, simulation_distance: cfg.simulation_distance ?? 10,
-    connect_token: cfg.connect_token || "", connector: cfg.loader === "paper" ? "plugin" : (cfg.connector || "gate"),
+    connect_token: cfg.connect_token || "", connector: cfg.connector || (cfg.loader === "paper" ? "plugin" : "gate"),
   };
 }
 
@@ -1351,8 +1351,8 @@ async function viewCreate() {
   const cfg = {
     step: 0, name: "", slug: "", slugEdited: false, slugOK: false, loader: "paper", version: "", versions: [], eula: null, accepted: false,
     max_players: 10, ram_mb: 0, ramTouched: false, port: 25565, pvp: true, gamemode: "survival", difficulty: "normal",
-    whitelist: false, whitelist_players: [], ops: [], online_mode: false, motd: "", iconPNG: "", addons: [],
-    view_distance: 10, simulation_distance: 10, connect_token: "", connector: "plugin",
+    whitelist: false, whitelist_players: [], ops: [], online_mode: true, motd: "", iconPNG: "", addons: [],
+    view_distance: 10, simulation_distance: 10, connect_token: "", connector: loader === "paper" ? "plugin" : "gate",
   };
   cfg.ram_mb = recommendRam(cfg.loader, cfg.max_players, 0);
   $app.innerHTML = `<div class="wrap"><p class="muted">Loading…</p></div>`;
@@ -1898,8 +1898,7 @@ function viewHelp(anchor) {
         <section id="h-tunnel"><h2>If the tunnel is refused</h2>
           <p>Players reach your PC through <a href="https://connect.minekube.com" target="_blank" rel="noopener">Minekube Connect</a>, a free tunnel network. You don't need an account: the first time your server starts, Minekube gives that address its own token and the launcher saves it, both in the server folder and on MZForge, so re-downloads reconnect to the same address.</p>
           <p>If the launcher says Minekube refused the registration, the usual cause is the address name already belonging to someone else's token. Create a new server with a different name, or ask us to look into it.</p>
-          <p>A "server-list ping wasn't answered" note is not a failure: Minekube's tunnel doesn't always answer pings even while players can join normally. That's why your server page uses the launcher's own check-ins for online status, not pings.</p>
-          <p><b>Need support?</b> Every launcher run creates <b>MZForge-Debug.log</b> in the server folder and appends to <b>MZForge-Debug-History.log</b>. These contain the launcher, Paper and Minekube Connect console output with MZForge tokens redacted. Send MZForge-Debug.log when reporting a problem.</p></section>
+          <p>A "server-list ping wasn't answered" note is not a failure: Minekube's tunnel doesn't always answer pings even while players can join normally. That's why your server page uses the launcher's own check-ins for online status, not pings.</p></section>
 
         <section id="h-troubleshooting"><h2>Friends can't join</h2>
           <ul>

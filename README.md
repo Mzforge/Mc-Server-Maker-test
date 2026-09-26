@@ -53,14 +53,12 @@ Every change you commit to GitHub goes live automatically.
   PaperMC or FabricMC, resolved by the Worker and checksum-verified) and,
   if the PC lacks the right Java, a private Temurin runtime into a
   `runtime` folder. Downloads are restricted to those vendors' own hosts.
-- **Minekube Connect:** modern Paper uses Minekube's official Connect plugin
-  directly; Vanilla/Fabric and older Paper use Gate as a fallback. Endpoint
-  tokens are captured and reused automatically so normal users do not need a
-  Minekube account or dashboard.
-- **Automatic diagnostics:** every launcher run writes `MZForge-Debug.log`
-  and appends `MZForge-Debug-History.log` in the server folder. Launcher,
-  Minecraft/Paper and Connect errors are captured, while MZForge/Connect
-  secrets are redacted before being written.
+- **Minecraft behind Gate:** per Minekube's connector docs, the backend
+  runs `online-mode=false` + `enforce-secure-profile=false` and Gate
+  (standard mode, not Lite) does the account checking, driven by the
+  account type set on the website. An optional per-server Connect token is
+  written to `connect.json`; the launcher explains how to get one if
+  Minekube refuses the registration.
 - **Appearance:** server name and an optional second line, each with a
   Minecraft colour, shown live in a server-list preview. Stored as one
   motd with colour codes and a newline.
@@ -87,8 +85,3 @@ new settings with defaults and a fresh 30 days.
 - **Deploy error about "database_id"?** Storage & Databases → D1 → Create,
   name it `mzforge`, copy its ID, and add `database_id = "the-id"` under
   `database_name = "mzforge"` in wrangler.toml.
-
-
-## V4 cracked-access default
-
-New servers default to **Premium + cracked**. Paper uses the Minekube Connect plugin with Paper itself in online mode; `allow-offline-mode-players` controls cracked/offline access. Existing servers keep their saved account policy: if a debug log says `account-mode=official-only`, switch Account type to **Premium + cracked**, save, and restart the launcher.
